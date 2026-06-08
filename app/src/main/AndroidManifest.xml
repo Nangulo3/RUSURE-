@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Necesario para resolver labels/iconos y lanzar el catálogo curado de apps objetivo. -->
+    <queries>
+        <package android:name="com.instagram.android" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.zhiliaoapp.musically" />
+    </queries>
+
+    <application
+        android:name=".RuSureApp"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.RuSure">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.RuSure">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Pantalla de fricción: se lanza desde el AccessibilityService por encima
+             de la app objetivo. Translúcida, sin historial ni recents. -->
+        <activity
+            android:name=".ui.interruption.InterruptionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@style/Theme.RuSure.Interruption" />
+
+        <!-- Servicio de accesibilidad que intercepta la apertura de apps/secciones. -->
+        <service
+            android:name=".service.RuSureAccessibilityService"
+            android:exported="true"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+    </application>
+
+</manifest>

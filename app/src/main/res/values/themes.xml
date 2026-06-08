@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.RuSure" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Tema translúcido a pantalla completa para la pantalla de fricción.
+         Permite que el Compose dibuje su propio fondo y que la Activity
+         no muestre transición de ventana opaca por encima de la app objetivo. -->
+    <style name="Theme.RuSure.Interruption" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+</resources>

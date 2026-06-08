@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">RuSure</string>
+    <string name="accessibility_service_label">RuSure — Fricción consciente</string>
+    <string name="accessibility_service_description">RuSure detecta cuando abres apps o secciones de alto consumo (Reels, Shorts, TikTok) e interpone una pantalla de pausa consciente con cuenta regresiva antes de permitir el acceso.</string>
+</resources>
