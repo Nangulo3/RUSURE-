@@ -20,6 +20,9 @@ class AppContainer(context: Context) {
 
     val database: RuSureDatabase by lazy {
         Room.databaseBuilder(appContext, RuSureDatabase::class.java, RuSureDatabase.NAME)
+            // Migración real que redondea el límite de uso continuo a minutos enteros; el fallback
+            // destructivo queda solo como red de seguridad para rutas de versión no contempladas.
+            .addMigrations(RuSureDatabase.MIGRATION_1_2, RuSureDatabase.MIGRATION_2_3)
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
     }

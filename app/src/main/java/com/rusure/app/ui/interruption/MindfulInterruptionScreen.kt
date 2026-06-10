@@ -1,6 +1,6 @@
 package com.rusure.app.ui.interruption
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,9 +35,24 @@ import com.rusure.app.domain.model.UsageStats
 import com.rusure.app.ui.util.formatDuration
 import com.rusure.app.ui.util.formatTimestamp
 
+/**
+ * Texto a alto contraste para garantizar legibilidad sobre el fondo difuminado y el scrim,
+ * cumpliendo las reglas de accesibilidad visual independientemente del contenido de la app.
+ */
+private val TextPrimary = Color.White
+private val TextSecondary = Color.White.copy(alpha = 0.88f)
+
+/**
+ * Opacidad del overlay oscuro. Cuando el blur nativo está activo basta un velo algo más ligero;
+ * sin blur (fallback pre-Android 12) se refuerza para ocultar el contenido de la app de fondo.
+ */
+private const val SCRIM_ALPHA_WITH_BLUR = 0.62f
+private const val SCRIM_ALPHA_FALLBACK = 0.78f
+
 @Composable
 fun MindfulInterruptionScreen(
     viewModel: InterruptionViewModel,
+    glassBlurActive: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -43,6 +60,7 @@ fun MindfulInterruptionScreen(
         uiState = uiState,
         onContinue = viewModel::onContinue,
         onLeave = viewModel::onLeave,
+        glassBlurActive = glassBlurActive,
         modifier = modifier
     )
 }
@@ -52,13 +70,15 @@ fun MindfulInterruptionContent(
     uiState: InterruptionUiState,
     onContinue: () -> Unit,
     onLeave: () -> Unit,
+    glassBlurActive: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val scrimAlpha = if (glassBlurActive) SCRIM_ALPHA_WITH_BLUR else SCRIM_ALPHA_FALLBACK
     Surface(
         modifier = modifier.fillMaxSize(),
-        // Scrim semitransparente: oscurece y, combinado con el blur de ventana, deja el
-        // contenido de la app de fondo difuminado e ilegible sin tapar del todo el efecto.
-        color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.55f)
+        // Overlay oscuro: combinado con el blur de ventana produce el efecto frosted glass; sin
+        // blur, su opacidad reforzada deja igualmente ilegible la app de fondo.
+        color = MaterialTheme.colorScheme.scrim.copy(alpha = scrimAlpha)
     ) {
         Box(
             modifier = Modifier
@@ -66,18 +86,14 @@ fun MindfulInterruptionContent(
                 .padding(24.dp),
             contentAlignment = Alignment.Center
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp)
-            ) {
+            GlassPanel {
                 Text(
                     text = when (uiState.mode) {
                         GateMode.INITIAL -> "Una pausa antes de entrar"
                         GateMode.RE_ENTRY -> "Llevas un buen rato aquí"
                     },
                     style = MaterialTheme.typography.headlineSmall,
-                    color = Color.White,
+                    color = TextPrimary,
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -85,7 +101,7 @@ fun MindfulInterruptionContent(
                 Text(
                     text = uiState.displayName,
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = TextSecondary,
                     textAlign = TextAlign.Center
                 )
 
@@ -101,7 +117,7 @@ fun MindfulInterruptionContent(
                         "Respira. El botón se activará al terminar la cuenta."
                     },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.8f),
+                    color = TextSecondary,
                     textAlign = TextAlign.Center
                 )
 
@@ -119,15 +135,38 @@ fun MindfulInterruptionContent(
 
                 OutlinedButton(
                     onClick = onLeave,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary)
                 ) {
-                    Text(
-                        text = "No quiero continuar a la app",
-                        color = Color.White
-                    )
+                    Text(text = "No quiero continuar a la app")
                 }
             }
         }
+    }
+}
+
+/**
+ * Panel "frosted glass": superficie translúcida y oscura con borde sutil que se asienta sobre el
+ * fondo difuminado. Su base semiopaca garantiza el alto contraste del temporizador y los textos
+ * principales sea cual sea el contenido de la app subyacente.
+ */
+@Composable
+private fun GlassPanel(content: @Composable (androidx.compose.foundation.layout.ColumnScope.() -> Unit)) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        color = Color.Black.copy(alpha = 0.5f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            content = content
+        )
     }
 }
 

@@ -1,5 +1,6 @@
 package com.rusure.app.domain.catalog
 
+import com.rusure.app.domain.model.GateAction
 import com.rusure.app.domain.model.TargetType
 
 /**
@@ -22,7 +23,8 @@ data class CatalogEntry(
     val contentDescMatchers: List<String> = emptyList(),
     val defaultInitialTimerSeconds: Int,
     val defaultContinuousUsageLimitSeconds: Int,
-    val defaultReEntryTimerSeconds: Int
+    val defaultReEntryTimerSeconds: Int,
+    val defaultEntryAction: GateAction = GateAction.WAIT
 )
 
 /**
@@ -42,17 +44,20 @@ object TargetCatalog {
             displayName = "Instagram · Reels",
             targetType = TargetType.SECTION,
             sectionKey = "reels",
-            // Solo contenedores del VISOR de Reels (a pantalla completa). Deliberadamente NO se
-            // incluye el botón de la pestaña (clips_tab/reels_tab) porque existe también en el
-            // feed principal y provocaba que la fricción saltara fuera de Reels.
+            // Aislamiento ESTRICTO: solo los contenedores del VISOR de Reels a pantalla completa.
+            // Deliberadamente NO se incluye el botón de la pestaña (clips_tab/reels_tab) porque
+            // existe también en el feed principal, ni la rejilla de Reels del perfil. Estos ids
+            // solo están presentes (y visibles) dentro del reproductor de Reels, de modo que la
+            // fricción NUNCA salta en Feed, Comentarios, Perfil o Historias.
             viewIdMatchers = listOf(
                 "com.instagram.android:id/clips_viewer_view_pager",
                 "com.instagram.android:id/clips_viewer_root",
                 "com.instagram.android:id/clips_video_container"
             ),
-            // Respaldo: solo dispara si la pestaña "Reels" está realmente seleccionada (activa),
-            // nunca por un acceso directo visible en el feed.
-            contentDescMatchers = listOf("Reels"),
+            // Sin respaldo por content-description: el texto "Reels" aparece como pestaña
+            // seleccionada también en el Perfil (rejilla de reels) y dispararía falsos positivos.
+            // La detección queda anclada exclusivamente a los ViewNodes del visor de Reels.
+            contentDescMatchers = emptyList(),
             defaultInitialTimerSeconds = 10,
             defaultContinuousUsageLimitSeconds = 300,
             defaultReEntryTimerSeconds = 15

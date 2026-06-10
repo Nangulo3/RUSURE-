@@ -23,7 +23,8 @@ object DefaultTargetsSeeder {
                 enabled = false,
                 initialTimerSeconds = entry.defaultInitialTimerSeconds,
                 continuousUsageLimitSeconds = entry.defaultContinuousUsageLimitSeconds,
-                reEntryTimerSeconds = entry.defaultReEntryTimerSeconds
+                reEntryTimerSeconds = entry.defaultReEntryTimerSeconds,
+                entryAction = entry.defaultEntryAction
             )
         }
         dao.insertAll(defaults)

@@ -20,5 +20,12 @@ enum class GateState {
     ALLOWED,
 
     /** Superado el límite de uso continuo; pendiente de disparar gate de reingreso. */
-    LIMIT_REACHED
+    LIMIT_REACHED,
+
+    /**
+     * Objetivo configurado como "Bloquear completamente": el acceso se deniega y se reimpone el
+     * regreso al inicio mientras el objetivo siga en primer plano (defiende la pulsación de HOME
+     * frente a la animación de arranque de la app). Se resetea a [IDLE] al salir del objetivo.
+     */
+    BLOCKED
 }

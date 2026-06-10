@@ -4,23 +4,24 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.viewModels
-import com.rusure.app.ui.settings.SettingsScreen
-import com.rusure.app.ui.settings.SettingsViewModel
+import com.rusure.app.ui.navigation.MainNavHost
 import com.rusure.app.ui.theme.RuSureTheme
 
+/**
+ * Punto de entrada de la UI. Toda la navegación (barra inferior Menú / Estadísticas y sus
+ * sub-pantallas) vive en [MainNavHost]; aquí solo se inyecta el [AppContainer] y el tema. La
+ * navegación es por estado en memoria (sin Navigation-Compose), coherente con esta toolchain.
+ */
 class MainActivity : ComponentActivity() {
-
-    private val settingsViewModel: SettingsViewModel by viewModels {
-        SettingsViewModel.factory((application as RuSureApp).container)
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val container = (application as RuSureApp).container
+
         setContent {
             RuSureTheme {
-                SettingsScreen(viewModel = settingsViewModel)
+                MainNavHost(container = container)
             }
         }
     }

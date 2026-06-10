@@ -3,6 +3,7 @@ package com.rusure.app.data.local.entity
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.rusure.app.domain.model.GateAction
 import com.rusure.app.domain.model.TargetType
 
 /**
@@ -43,5 +44,8 @@ data class AppTargetConfig(
     val continuousUsageLimitSeconds: Int,
 
     /** Segundos de la cuenta regresiva del gate de reingreso. */
-    val reEntryTimerSeconds: Int
+    val reEntryTimerSeconds: Int,
+
+    /** Acción al intentar entrar al objetivo: mostrar pantalla de espera o bloquear por completo. */
+    val entryAction: GateAction = GateAction.WAIT
 )
