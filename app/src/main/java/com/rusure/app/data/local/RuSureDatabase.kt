@@ -12,7 +12,7 @@ import com.rusure.app.data.local.entity.UsageSession
 
 @Database(
     entities = [AppTargetConfig::class, UsageSession::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -48,6 +48,19 @@ abstract class RuSureDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE app_target_config " +
                         "ADD COLUMN entryAction TEXT NOT NULL DEFAULT 'WAIT'"
+                )
+            }
+        }
+
+        /**
+         * Migración de esquema: añade [UsageSession.cancelledAccesses] (accesos cancelados por
+         * sesión). Las filas previas adoptan 0.
+         */
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE usage_session " +
+                        "ADD COLUMN cancelledAccesses INTEGER NOT NULL DEFAULT 0"
                 )
             }
         }

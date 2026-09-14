@@ -58,4 +58,23 @@ interface UsageSessionDao {
         """
     )
     fun observeStatsSince(catalogKey: String, sinceEpochMillis: Long): Flow<UsageStats>
+
+    /** Todas las sesiones desde [sinceEpochMillis] (orden ascendente) para agregación en memoria. */
+    @Query(
+        "SELECT * FROM usage_session WHERE startEpochMillis >= :sinceEpochMillis " +
+            "ORDER BY startEpochMillis ASC"
+    )
+    fun observeSessionsSince(sinceEpochMillis: Long): Flow<List<UsageSession>>
+
+    @Query("UPDATE usage_session SET activeDurationMillis = activeDurationMillis + :deltaMillis WHERE id = :id")
+    suspend fun addActiveTime(id: Long, deltaMillis: Long)
+
+    @Query("UPDATE usage_session SET interruptions = interruptions + 1 WHERE id = :id")
+    suspend fun incrementInterruptions(id: Long)
+
+    @Query("UPDATE usage_session SET cancelledAccesses = cancelledAccesses + 1 WHERE id = :id")
+    suspend fun incrementCancelled(id: Long)
+
+    @Query("UPDATE usage_session SET endEpochMillis = :nowMillis WHERE id = :id AND endEpochMillis IS NULL")
+    suspend fun endSession(id: Long, nowMillis: Long)
 }

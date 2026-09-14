@@ -46,23 +46,21 @@ class RuSureRepository(
 
     suspend fun getSession(id: Long): UsageSession? = sessionDao.getById(id)
 
-    suspend fun addActiveTime(sessionId: Long, deltaMillis: Long) {
-        val session = sessionDao.getById(sessionId) ?: return
-        sessionDao.update(
-            session.copy(activeDurationMillis = session.activeDurationMillis + deltaMillis)
-        )
-    }
+    suspend fun addActiveTime(sessionId: Long, deltaMillis: Long) =
+        sessionDao.addActiveTime(sessionId, deltaMillis)
 
-    suspend fun incrementInterruptions(sessionId: Long) {
-        val session = sessionDao.getById(sessionId) ?: return
-        sessionDao.update(session.copy(interruptions = session.interruptions + 1))
-    }
+    suspend fun incrementInterruptions(sessionId: Long) =
+        sessionDao.incrementInterruptions(sessionId)
 
-    suspend fun endSession(sessionId: Long, nowMillis: Long) {
-        val session = sessionDao.getById(sessionId) ?: return
-        if (session.endEpochMillis != null) return
-        sessionDao.update(session.copy(endEpochMillis = nowMillis))
-    }
+    suspend fun incrementCancelled(sessionId: Long) =
+        sessionDao.incrementCancelled(sessionId)
+
+    suspend fun endSession(sessionId: Long, nowMillis: Long) =
+        sessionDao.endSession(sessionId, nowMillis)
+
+    /** Sesiones crudas desde [sinceEpochMillis] para agregados de la pantalla de estadísticas. */
+    fun observeSessionsSince(sinceEpochMillis: Long): Flow<List<UsageSession>> =
+        sessionDao.observeSessionsSince(sinceEpochMillis)
 
     // --- Estadísticas ---
 

@@ -159,14 +159,19 @@ fun TargetConfigScreen(
                         onChange = viewModel::setEntryAction
                     )
 
-                    TimesConfigCard(
-                        initialSeconds = draft.initialTimerSeconds,
-                        reminderSeconds = draft.continuousUsageLimitSeconds,
-                        reEntrySeconds = draft.reEntryTimerSeconds,
-                        onSelectInitialSeconds = viewModel::setInitialTimerSeconds,
-                        onSelectReminderMinutes = viewModel::setContinuousLimitMinutes,
-                        onSelectReEntrySeconds = viewModel::setReEntryTimerSeconds
-                    )
+                    // La configuración de tiempos solo aplica al flujo de "Espera"; en "Bloqueo"
+                    // no hay cuentas regresivas, así que la tarjeta se oculta (y reaparece al
+                    // volver a elegir "Espera").
+                    AnimatedVisibility(visible = draft.entryAction == GateAction.WAIT) {
+                        TimesConfigCard(
+                            initialSeconds = draft.initialTimerSeconds,
+                            reminderSeconds = draft.continuousUsageLimitSeconds,
+                            reEntrySeconds = draft.reEntryTimerSeconds,
+                            onSelectInitialSeconds = viewModel::setInitialTimerSeconds,
+                            onSelectReminderMinutes = viewModel::setContinuousLimitMinutes,
+                            onSelectReEntrySeconds = viewModel::setReEntryTimerSeconds
+                        )
+                    }
                 }
             }
         }

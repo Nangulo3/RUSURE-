@@ -2,6 +2,7 @@ package com.rusure.app.ui.statistics
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +61,9 @@ fun AppDetailScreen(
     modifier: Modifier = Modifier
 ) {
     BackHandler(onBack = onBack)
+
+    var behaviorRange by rememberSaveable { mutableStateOf(BehaviorRange.WEEK) }
+    val behavior = if (behaviorRange == BehaviorRange.TODAY) detail.behaviorToday else detail.behaviorWeek
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -127,9 +135,12 @@ fun AppDetailScreen(
                 }
             }
             item {
+                BehaviorRangeSelector(selected = behaviorRange, onSelect = { behaviorRange = it })
+            }
+            item {
                 BehaviorMetricRow(
                     label = "Aperturas",
-                    value = detail.behavior.openings,
+                    value = behavior.openings,
                     accent = OpeningsAccent,
                     icon = { color -> OpenExternalIcon(modifier = Modifier.size(22.dp), color = color) }
                 )
@@ -137,7 +148,7 @@ fun AppDetailScreen(
             item {
                 BehaviorMetricRow(
                     label = "Interrupciones generadas",
-                    value = detail.behavior.interruptions,
+                    value = behavior.interruptions,
                     accent = InterruptionAccent,
                     icon = { color -> InterruptionIcon(modifier = Modifier.size(22.dp), color = color) }
                 )
@@ -145,7 +156,7 @@ fun AppDetailScreen(
             item {
                 BehaviorMetricRow(
                     label = "Accesos cancelados",
-                    value = detail.behavior.cancelledAccesses,
+                    value = behavior.cancelledAccesses,
                     accent = CancelAccent,
                     icon = { color -> CancelIcon(modifier = Modifier.size(22.dp), color = color) }
                 )
@@ -231,6 +242,41 @@ private fun AccentIconBadge(accent: Color, icon: @Composable (Color) -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         icon(accent)
+    }
+}
+
+/** Ventana temporal de las métricas de comportamiento del detalle. */
+enum class BehaviorRange(val label: String) { TODAY("Hoy"), WEEK("Últimos 7 días") }
+
+@Composable
+private fun BehaviorRangeSelector(selected: BehaviorRange, onSelect: (BehaviorRange) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        BehaviorRange.entries.forEach { range ->
+            val active = range == selected
+            Text(
+                text = range.label,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (active) MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (active) MaterialTheme.colorScheme.primary else Color.Transparent
+                    )
+                    .clickable { onSelect(range) }
+                    .padding(vertical = 8.dp)
+            )
+        }
     }
 }
 

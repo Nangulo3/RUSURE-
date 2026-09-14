@@ -24,8 +24,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -62,6 +64,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rusure.app.ui.settings.AccessibilityStatus
 import com.rusure.app.ui.theme.RuSureTheme
+import com.rusure.app.ui.util.formatCountdown
 import com.rusure.app.ui.util.formatDurationHoursMinutes
 
 /** Verde de estado "Activo": contenedor translúcido + texto, legibles sobre fondo oscuro. */
@@ -72,9 +75,10 @@ private val ActiveChipContent = Color(0xFF6FE08A)
 private val BlockedAccent = Color(0xFFFF5A5A)
 
 /**
- * Dashboard "Mi tiempo": panel de SOLO LECTURA inspirado en Tiempo en Pantalla / Bienestar Digital.
- * Presenta el resumen del día y la lista de objetivos. La única interacción posible es navegar a la
- * configuración de un objetivo (callback [onConfigure]); no contiene ningún control de edición.
+ * Dashboard "Mi tiempo": panel inspirado en Tiempo en Pantalla / Bienestar Digital, mayormente de
+ * SOLO LECTURA. Presenta el resumen del día y la lista de objetivos; la única interacción posible
+ * además de navegar a la configuración de un objetivo (callback [onConfigure]) es la pausa global
+ * de protección de 5 minutos (tarjeta de pausa, ver [PauseCard] y `docs/DECISIONS.md` D-009).
  */
 @Composable
 fun DashboardScreen(
@@ -103,6 +107,8 @@ fun DashboardScreen(
         accessibilityEnabled = accessibilityEnabled,
         onConfigure = onConfigure,
         onOpenSettings = openAccessibilitySettings,
+        onStartPause = viewModel::onStartPause,
+        onEndPause = viewModel::onEndPause,
         bottomBar = bottomBar,
         modifier = modifier
     )
@@ -115,6 +121,8 @@ private fun DashboardContent(
     accessibilityEnabled: Boolean,
     onConfigure: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onStartPause: () -> Unit,
+    onEndPause: () -> Unit,
     bottomBar: @Composable () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -162,6 +170,14 @@ private fun DashboardContent(
 
             item {
                 DailySummaryCard(summary = uiState.summary)
+            }
+
+            item {
+                PauseCard(
+                    remainingMillis = uiState.pauseRemainingMillis,
+                    onStartPause = onStartPause,
+                    onEndPause = onEndPause
+                )
             }
 
             item {
@@ -272,6 +288,92 @@ private fun DailySummaryCard(summary: DailySummary) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Tarjeta de pausa global de protección (ver `docs/DECISIONS.md` D-009): pausa durante 5 minutos
+ * toda la fricción configurada (espera, recordatorio continuo y modo Bloqueado) sin tocar la
+ * configuración de ningún objetivo. Sin pausa activa invita a activarla con un solo toque; en
+ * pausa muestra la cuenta atrás y permite cancelarla antes de tiempo.
+ */
+@Composable
+private fun PauseCard(
+    remainingMillis: Long,
+    onStartPause: () -> Unit,
+    onEndPause: () -> Unit
+) {
+    val paused = remainingMillis > 0L
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                ClockBadge(
+                    modifier = Modifier.size(24.dp),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                if (paused) {
+                    Text(
+                        text = "Protección en pausa",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = formatCountdown(remainingMillis),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Todo vuelve a tu configuración al terminar",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        text = "Pausar protección",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "Desactiva la fricción de todas las apps durante 5 minutos",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            if (paused) {
+                Button(onClick = onEndPause) {
+                    Text("Reanudar ahora")
+                }
+            } else {
+                FilledTonalButton(onClick = onStartPause) {
+                    Text("Pausar 5 min")
+                }
             }
         }
     }
@@ -648,6 +750,8 @@ private fun DashboardContentPreview() {
             accessibilityEnabled = true,
             onConfigure = {},
             onOpenSettings = {},
+            onStartPause = {},
+            onEndPause = {},
             bottomBar = {}
         )
     }

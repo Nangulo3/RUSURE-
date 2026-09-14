@@ -42,6 +42,18 @@ fun formatDurationHoursMinutes(millis: Long): String {
     }.trim()
 }
 
+/**
+ * Formatea una duración en milisegundos como cuenta atrás "m:ss" (ej. "4:05"), redondeando hacia
+ * arriba al segundo. Mínimo "0:00" (nunca negativo). Usado en la tarjeta de pausa del dashboard.
+ */
+fun formatCountdown(millis: Long): String {
+    if (millis <= 0L) return "0:00"
+    val totalSeconds = (millis + 999L) / 1000L
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%d:%02d".format(minutes, seconds)
+}
+
 /** Formatea un timestamp epoch a hora local "HH:mm", o "—" si es nulo. */
 fun formatTimestamp(epochMillis: Long?): String {
     if (epochMillis == null || epochMillis <= 0L) return "—"

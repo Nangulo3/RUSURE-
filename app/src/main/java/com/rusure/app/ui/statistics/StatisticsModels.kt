@@ -154,7 +154,10 @@ data class AppStatsDetail(
     val dailyAverageMinutes: Int,
     /** Tendencia de los últimos 7 días FILTRADA solo para esta app. */
     val trend: List<DailyPoint>,
-    val behavior: AppBehavior
+    /** Comportamiento del día actual. */
+    val behaviorToday: AppBehavior,
+    /** Comportamiento de los últimos 7 días. */
+    val behaviorWeek: AppBehavior
 )
 
 /** Estado de la pantalla principal "Estadísticas". */
@@ -255,12 +258,14 @@ object MockStatistics {
     /** Detalle individual de una app por su catalogKey. */
     fun detailFor(catalogKey: String): AppStatsDetail {
         val app = ShortContentApps.byKey(catalogKey)
+        val week = behaviorByKey[catalogKey] ?: AppBehavior(0, 0, 0)
         return AppStatsDetail(
             app = app,
             todayMinutes = todayByKey[catalogKey] ?: 0,
             dailyAverageMinutes = averageByKey[catalogKey] ?: 0,
             trend = trendByKey[catalogKey] ?: emptyList(),
-            behavior = behaviorByKey[catalogKey] ?: AppBehavior(0, 0, 0)
+            behaviorToday = AppBehavior(week.openings / 7, week.interruptions / 7, week.cancelledAccesses / 7),
+            behaviorWeek = week
         )
     }
 }

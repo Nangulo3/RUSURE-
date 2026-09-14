@@ -32,5 +32,8 @@ data class UsageSession(
     val activeDurationMillis: Long = 0L,
 
     /** Cuántas veces se forzó la pantalla intermedia durante esta sesión. */
-    val interruptions: Int = 0
+    val interruptions: Int = 0,
+
+    /** Cuántas veces el usuario eligió SALIR en la pantalla de fricción durante esta sesión. */
+    val cancelledAccesses: Int = 0
 )

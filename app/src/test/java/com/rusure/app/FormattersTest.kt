@@ -1,5 +1,6 @@
 package com.rusure.app
 
+import com.rusure.app.ui.util.formatCountdown
 import com.rusure.app.ui.util.formatDuration
 import com.rusure.app.ui.util.formatTimestamp
 import org.junit.Assert.assertEquals
@@ -30,5 +31,21 @@ class FormattersTest {
     @Test
     fun formatTimestamp_nullIsDash() {
         assertEquals("—", formatTimestamp(null))
+    }
+
+    @Test
+    fun formatCountdown_zeroOrNegativeIsZero() {
+        assertEquals("0:00", formatCountdown(0L))
+        assertEquals("0:00", formatCountdown(-1_000L))
+    }
+
+    @Test
+    fun formatCountdown_roundsUpToNextSecond() {
+        assertEquals("0:01", formatCountdown(1L))
+    }
+
+    @Test
+    fun formatCountdown_minutesAndSeconds() {
+        assertEquals("4:05", formatCountdown(245_000L))
     }
 }

@@ -8,11 +8,14 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.rusure.app.data.repository.RuSureRepository
 import com.rusure.app.di.AppContainer
 import com.rusure.app.domain.model.GateAction
+import com.rusure.app.domain.pause.PauseController
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -57,15 +60,21 @@ data class DailySummary(
     val openingsAvoided: Int
 )
 
-/** Estado de SOLO LECTURA del dashboard: resumen del día + lista de objetivos. */
+/**
+ * Estado del dashboard: resumen del día + lista de objetivos (solo lectura) y el tiempo restante
+ * de la pausa global de protección ([pauseRemainingMillis], 0 = sin pausa activa), la única
+ * acción disponible en esta pantalla además de navegar (ver [PauseController], D-009).
+ */
 data class DashboardUiState(
     val summary: DailySummary,
-    val targets: List<TargetDashboardItem>
+    val targets: List<TargetDashboardItem>,
+    val pauseRemainingMillis: Long = 0L
 ) {
     companion object {
         val EMPTY = DashboardUiState(
             summary = DailySummary(totalActiveMillis = 0L, openingsAvoided = 0),
-            targets = emptyList()
+            targets = emptyList(),
+            pauseRemainingMillis = 0L
         )
     }
 }
@@ -76,17 +85,18 @@ data class DashboardUiState(
  * ([com.rusure.app.ui.config.TargetConfigViewModel]) para mantener separados consulta y modificación.
  */
 class DashboardViewModel(
-    private val repository: RuSureRepository
+    private val repository: RuSureRepository,
+    private val pauseController: PauseController
 ) : ViewModel() {
 
     companion object {
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
-            initializer { DashboardViewModel(container.repository) }
+            initializer { DashboardViewModel(container.repository, container.pauseController) }
         }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val uiState: StateFlow<DashboardUiState> =
+    private val targetsAndSummary =
         repository.observeTargets().flatMapLatest { targets ->
             if (targets.isEmpty()) {
                 flowOf(emptyList())
@@ -103,29 +113,54 @@ class DashboardViewModel(
                 ) { combined -> combined.toList() }
             }
         }.map { pairs ->
+            DailySummary(
+                totalActiveMillis = pairs.sumOf { it.second.totalActiveMillis },
+                openingsAvoided = pairs.sumOf { it.second.totalInterruptions }
+            ) to pairs.map { (config, _) ->
+                TargetDashboardItem(
+                    catalogKey = config.catalogKey,
+                    packageName = config.packageName,
+                    displayName = config.displayName,
+                    enabled = config.enabled,
+                    protectionMode = when (config.entryAction) {
+                        GateAction.BLOCK -> ProtectionMode.BLOCKED
+                        GateAction.WAIT -> ProtectionMode.TIMER
+                    },
+                    initialTimerSeconds = config.initialTimerSeconds,
+                    continuousUsageLimitSeconds = config.continuousUsageLimitSeconds
+                )
+            }
+        }
+
+    /** Cuenta atrás del tiempo restante de pausa, actualizada cada segundo; 0 = sin pausa activa. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val pauseRemaining = pauseController.pausedUntilMillis.flatMapLatest { until ->
+        flow {
+            while (true) {
+                val remaining = (until - System.currentTimeMillis()).coerceAtLeast(0L)
+                emit(remaining)
+                if (remaining <= 0L) break
+                delay(1_000L)
+            }
+        }
+    }
+
+    val uiState: StateFlow<DashboardUiState> =
+        combine(targetsAndSummary, pauseRemaining) { (summary, targets), pauseRemainingMillis ->
             DashboardUiState(
-                summary = DailySummary(
-                    totalActiveMillis = pairs.sumOf { it.second.totalActiveMillis },
-                    openingsAvoided = pairs.sumOf { it.second.totalInterruptions }
-                ),
-                targets = pairs.map { (config, _) ->
-                    TargetDashboardItem(
-                        catalogKey = config.catalogKey,
-                        packageName = config.packageName,
-                        displayName = config.displayName,
-                        enabled = config.enabled,
-                        protectionMode = when (config.entryAction) {
-                            GateAction.BLOCK -> ProtectionMode.BLOCKED
-                            GateAction.WAIT -> ProtectionMode.TIMER
-                        },
-                        initialTimerSeconds = config.initialTimerSeconds,
-                        continuousUsageLimitSeconds = config.continuousUsageLimitSeconds
-                    )
-                }
+                summary = summary,
+                targets = targets,
+                pauseRemainingMillis = pauseRemainingMillis
             )
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = DashboardUiState.EMPTY
         )
+
+    /** Inicia la pausa global de 5 minutos ("Pausar 5 min"). */
+    fun onStartPause() = pauseController.pause()
+
+    /** Cancela la pausa activa antes de tiempo ("Reanudar ahora"). */
+    fun onEndPause() = pauseController.resume()
 }

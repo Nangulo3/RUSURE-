@@ -6,6 +6,7 @@ import com.rusure.app.data.local.RuSureDatabase
 import com.rusure.app.data.repository.RuSureRepository
 import com.rusure.app.domain.detection.TargetDetector
 import com.rusure.app.domain.gate.GateCoordinator
+import com.rusure.app.domain.pause.PauseController
 
 /**
  * Contenedor de dependencias singletons del proceso (DI manual).
@@ -22,7 +23,11 @@ class AppContainer(context: Context) {
         Room.databaseBuilder(appContext, RuSureDatabase::class.java, RuSureDatabase.NAME)
             // Migración real que redondea el límite de uso continuo a minutos enteros; el fallback
             // destructivo queda solo como red de seguridad para rutas de versión no contempladas.
-            .addMigrations(RuSureDatabase.MIGRATION_1_2, RuSureDatabase.MIGRATION_2_3)
+            .addMigrations(
+                RuSureDatabase.MIGRATION_1_2,
+                RuSureDatabase.MIGRATION_2_3,
+                RuSureDatabase.MIGRATION_3_4
+            )
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
     }
@@ -38,4 +43,9 @@ class AppContainer(context: Context) {
 
     /** Singleton de proceso: el servicio y la Activity de fricción comparten esta instancia. */
     val gateCoordinator: GateCoordinator by lazy { GateCoordinator() }
+
+    /** Singleton de proceso: el servicio y el dashboard comparten esta instancia. */
+    val pauseController: PauseController by lazy {
+        PauseController(appContext.getSharedPreferences("rusure_prefs", Context.MODE_PRIVATE))
+    }
 }

@@ -2,6 +2,7 @@ package com.rusure.app.ui.navigation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
@@ -15,8 +16,8 @@ import com.rusure.app.ui.dashboard.DashboardScreen
 import com.rusure.app.ui.dashboard.DashboardViewModel
 import com.rusure.app.ui.statistics.AppBreakdownScreen
 import com.rusure.app.ui.statistics.AppDetailScreen
-import com.rusure.app.ui.statistics.MockStatistics
 import com.rusure.app.ui.statistics.StatisticsScreen
+import com.rusure.app.ui.statistics.StatisticsViewModel
 
 /**
  * Destinos de la app. Las dos pestañas raíz ([Home] y [Stats]) muestran la [AppBottomBar]; el resto
@@ -41,6 +42,9 @@ fun MainNavHost(container: AppContainer) {
         mutableStateOf(Destination.Home)
     }
 
+    val statsViewModel: StatisticsViewModel = viewModel(factory = StatisticsViewModel.factory(container))
+    val statsData by statsViewModel.state.collectAsState()
+
     val onSelectTab: (MainTab) -> Unit = { tab ->
         destination = when (tab) {
             MainTab.MENU -> Destination.Home
@@ -63,7 +67,7 @@ fun MainNavHost(container: AppContainer) {
             // "Atrás" desde la pestaña de estadísticas vuelve al menú (no cierra la app).
             BackHandler { destination = Destination.Home }
             StatisticsScreen(
-                uiState = MockStatistics.statisticsUiState,
+                uiState = statsData.main,
                 onOpenAppBreakdown = { destination = Destination.StatsBreakdown },
                 bottomBar = { AppBottomBar(selected = MainTab.STATISTICS, onSelect = onSelectTab) }
             )
@@ -81,13 +85,13 @@ fun MainNavHost(container: AppContainer) {
         }
 
         Destination.StatsBreakdown -> AppBreakdownScreen(
-            items = MockStatistics.statisticsUiState.perAppToday,
+            items = statsData.main.perAppToday,
             onBack = { destination = Destination.Stats },
             onOpenApp = { catalogKey -> destination = Destination.StatsDetail(catalogKey) }
         )
 
         is Destination.StatsDetail -> AppDetailScreen(
-            detail = MockStatistics.detailFor(current.catalogKey),
+            detail = statsViewModel.detailFor(current.catalogKey, statsData),
             onBack = { destination = Destination.StatsBreakdown }
         )
     }
