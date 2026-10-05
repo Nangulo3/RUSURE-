@@ -12,6 +12,9 @@ import android.view.accessibility.AccessibilityWindowInfo
 import com.rusure.app.data.local.entity.AppTargetConfig
 import com.rusure.app.data.repository.RuSureRepository
 import com.rusure.app.domain.detection.TargetDetector
+import com.rusure.app.domain.engine.Clock
+import com.rusure.app.domain.engine.DeviceState
+import com.rusure.app.domain.engine.WindowProbe
 import com.rusure.app.domain.gate.GateCoordinator
 import com.rusure.app.domain.gate.GateDecision
 import com.rusure.app.domain.gate.GateMode
@@ -46,6 +49,19 @@ class RuSureAccessibilityService : AccessibilityService() {
     private val powerManager by lazy { getSystemService(Context.POWER_SERVICE) as PowerManager }
     private val keyguardManager by lazy {
         getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+    }
+
+    // --- Costuras del motor (ver domain/engine/Seams.kt) ---
+
+    /** Reloj real: tiempo de pared del sistema. */
+    private val clock = Clock { System.currentTimeMillis() }
+
+    /** Ventanas reales, a través del binding de accesibilidad. */
+    private val windowProbe = WindowProbe { packageName -> hasApplicationWindow(packageName) }
+
+    /** Estado real del dispositivo. */
+    private val deviceState = DeviceState {
+        powerManager.isInteractive && !keyguardManager.isKeyguardLocked
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -217,7 +233,7 @@ class RuSureAccessibilityService : AccessibilityService() {
             }
 
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                val now = System.currentTimeMillis()
+                val now = clock.now()
                 if (now - lastContentEvalMillis < CONTENT_EVAL_THROTTLE_MILLIS) return
                 lastContentEvalMillis = now
                 trace {
@@ -278,7 +294,7 @@ class RuSureAccessibilityService : AccessibilityService() {
             if (enabledTargets.none { it.packageName == previous }) return
             // El reloj de observación se cuenta desde el PRIMER indicio, no desde el último evento.
             if (!pendingExits.containsKey(previous)) {
-                pendingExits[previous] = System.currentTimeMillis()
+                pendingExits[previous] = clock.now()
                 true
             } else {
                 false
@@ -309,7 +325,7 @@ class RuSureAccessibilityService : AccessibilityService() {
         // onForegroundPackageChanged; apagar la pantalla no es salir de la app).
         if (!isDeviceActive()) return
 
-        val now = System.currentTimeMillis()
+        val now = clock.now()
         val due = synchronized(lock) {
             val ready = pendingExits.filterValues { now - it >= FOREGROUND_EXIT_CONFIRM_MILLIS }.keys.toList()
             ready.forEach { pendingExits.remove(it) }
@@ -318,7 +334,7 @@ class RuSureAccessibilityService : AccessibilityService() {
         if (due.isEmpty()) return
 
         for (packageName in due) {
-            if (hasApplicationWindow(packageName)) {
+            if (windowProbe.hasApplicationWindow(packageName)) {
                 // Falsa alarma: la app objetivo nunca dejó de ser la que el usuario está usando.
                 // Solo se le devuelve el primer plano si este no pertenece ya a OTRO objetivo
                 // vigilado (pantalla dividida o PiP: dos apps con ventana de aplicación a la vez).
@@ -509,7 +525,7 @@ class RuSureAccessibilityService : AccessibilityService() {
         // por ráfagas de eventos. El estado permanece IDLE para no bloquear un gate legítimo
         // posterior. (El límite de uso continuo dispara RE_ENTRY muy por encima de esta ventana.)
         synchronized(lock) {
-            val now = System.currentTimeMillis()
+            val now = clock.now()
             if (now - lastGateTriggerMillis < GATE_COOLDOWN_MILLIS) {
                 trace {
                     "gate ${config.catalogKey} $mode DESCARTADO por cooldown " +
@@ -536,7 +552,7 @@ class RuSureAccessibilityService : AccessibilityService() {
         trace { "transicion ${config.catalogKey} -> GATING | $mode ${seconds}s (pantalla de friccion)" }
 
         serviceScope.launch {
-            val now = System.currentTimeMillis()
+            val now = clock.now()
             // INITIAL inicia una nueva sesión (nueva apertura); RE_ENTRY continúa la actual.
             if (mode == GateMode.INITIAL) {
                 val openId = repository.getOpenSession(config.catalogKey)?.id
@@ -580,7 +596,7 @@ class RuSureAccessibilityService : AccessibilityService() {
 
         if (mode == GateMode.INITIAL) {
             serviceScope.launch {
-                val now = System.currentTimeMillis()
+                val now = clock.now()
                 val openId = repository.getOpenSession(config.catalogKey)?.id
                 val sessionId = openId ?: repository.startSession(config.catalogKey, config.packageName, now)
                 synchronized(lock) { runtime.sessionId = sessionId }
@@ -599,7 +615,7 @@ class RuSureAccessibilityService : AccessibilityService() {
             val runtime = runtimeFor(config.catalogKey)
             val suspendedAt = runtime.suspendedAtMillis
             if (suspendedAt != 0L &&
-                System.currentTimeMillis() - suspendedAt > runtime.suspendGraceMillis
+                clock.now() - suspendedAt > runtime.suspendGraceMillis
             ) {
                 true
             } else {
@@ -668,7 +684,7 @@ class RuSureAccessibilityService : AccessibilityService() {
                 flushActiveTime(catalogKey)
                 synchronized(lock) {
                     val runtime = runtimeFor(catalogKey)
-                    runtime.suspendedAtMillis = System.currentTimeMillis()
+                    runtime.suspendedAtMillis = clock.now()
                     runtime.suspendGraceMillis = grace
                 }
             }
@@ -678,7 +694,7 @@ class RuSureAccessibilityService : AccessibilityService() {
                 flushActiveTime(catalogKey)
                 synchronized(lock) {
                     val runtime = runtimeFor(catalogKey)
-                    runtime.suspendedAtMillis = System.currentTimeMillis()
+                    runtime.suspendedAtMillis = clock.now()
                     runtime.suspendGraceMillis = grace
                 }
             }
@@ -693,7 +709,7 @@ class RuSureAccessibilityService : AccessibilityService() {
      * como una apertura nueva (gate INITIAL).
      */
     private fun sweepExpiredSuspensions() {
-        val now = System.currentTimeMillis()
+        val now = clock.now()
         val expired = synchronized(lock) {
             runtimes.filter { (_, runtime) ->
                 runtime.suspendedAtMillis != 0L &&
@@ -730,13 +746,13 @@ class RuSureAccessibilityService : AccessibilityService() {
             runtime.continuousMillis = 0L
             runtime.suspendedAtMillis = 0L
             runtime.suspendGraceMillis = 0L
-            lastBlockHomeMillis = System.currentTimeMillis()
+            lastBlockHomeMillis = clock.now()
         }
         activeCatalogKey = null
         trace { "transicion ${config.catalogKey} -> BLOCKED | $mode -> HOME" }
 
         serviceScope.launch {
-            val now = System.currentTimeMillis()
+            val now = clock.now()
             if (mode == GateMode.INITIAL) {
                 val openId = repository.getOpenSession(config.catalogKey)?.id
                 val sessionId = openId
@@ -770,7 +786,7 @@ class RuSureAccessibilityService : AccessibilityService() {
         }
 
         val shouldPress = synchronized(lock) {
-            val now = System.currentTimeMillis()
+            val now = clock.now()
             if (now - lastBlockHomeMillis < BLOCK_REPRESS_THROTTLE_MILLIS) {
                 false
             } else {
@@ -975,7 +991,7 @@ class RuSureAccessibilityService : AccessibilityService() {
         }
         trace { "transicion $catalogKey -> IDLE | cierre (sesion=$sessionId)" }
         if (sessionId != null) {
-            serviceScope.launch { repository.endSession(sessionId, System.currentTimeMillis()) }
+            serviceScope.launch { repository.endSession(sessionId, clock.now()) }
         }
     }
 
@@ -988,8 +1004,7 @@ class RuSureAccessibilityService : AccessibilityService() {
      * pantalla o bloquear/desbloquear el teléfono SIN salir de la app no debe contar como salida ni
      * avanzar el límite de uso continuo; al volver, el objetivo retoma sin fricción.
      */
-    private fun isDeviceActive(): Boolean =
-        powerManager.isInteractive && !keyguardManager.isKeyguardLocked
+    private fun isDeviceActive(): Boolean = deviceState.isActive()
 
     companion object {
         /**
