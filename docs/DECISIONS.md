@@ -209,6 +209,32 @@ modifica ningún `AppTargetConfig` — es solo un instante "pausado hasta X" que
 
 ---
 
+## D-010 · Regla de trabajo: red de tests antes de tocar el motor
+
+**Estado**: CONFIRMADO
+
+**Decisión**
+Todo cambio en `service/` o `domain/engine/` debe dejar `testDebugUnitTest` en verde. Los tests de
+`spec/` representan decisiones D-xxx: si uno falla, es una regresión. Los de `current/` fijan
+comportamiento no confirmado: si uno falla, se pregunta al usuario antes de actualizarlo (D-003).
+Los cambios que afecten a la detección de salida, al primer plano o a la temporización requieren
+además pasar `docs/DEVICE_CHECKLIST.md` en un dispositivo real.
+
+**Confirmado por**: Usuario
+**Fecha**: 2026-10-04
+
+**Notas**
+* Enfoque elegido por el usuario: extraer la máquina de estados a `domain/engine/GateEngine`
+  (Kotlin puro, sin `import android.*`) y probarla con tests JVM con reloj, ventanas y estado del
+  dispositivo inyectados. Descartados: Robolectric sobre el servicio y checklist manual como única red.
+* Los tests de `current/` NO son especificación: describen el código de hoy (informe B/S/E) y existen
+  solo para detectar cambios no decididos. Cuando se resuelve la pregunta abierta correspondiente,
+  el test se mueve a `spec/` o se reescribe.
+* Los tests se nombran por regla, no por app (`D005_auxWindowOverGlobalTarget_30s_noGate`), con
+  paquetes ficticios, coherente con la prohibición de parches por app.
+
+---
+
 # Preguntas abiertas (sin confirmar)
 
 Ninguna de las siguientes tiene todavía un comportamiento esperado definido. El detalle (contexto,

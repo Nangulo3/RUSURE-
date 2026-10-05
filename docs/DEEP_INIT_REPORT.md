@@ -165,7 +165,7 @@ RUSURE/
     │   ├── ui/interruption/{InterruptionActivity,InterruptionViewModel,MindfulInterruptionScreen}.kt
     │   ├── ui/settings/AccessibilityStatus.kt
     │   └── ui/util/Formatters.kt
-    ├── test/java/com/rusure/app/FormattersTest.kt      # 5 tests (los únicos)
+    ├── test/java/com/rusure/app/FormattersTest.kt      # 8 tests (los únicos)
     └── androidTest/java/com/rusure/app/ExampleInstrumentedTest.kt  # plantilla vacía
 ```
 
@@ -1532,7 +1532,7 @@ Confianza              MEDIA (INFERIDO: depende del ciclo de vida real que apliq
 2. **Observabilidad cero**: ni una llamada a `Log`, ni telemetría, ni pantalla de diagnóstico. Cuando
    la detección falla (o gatea de más), no queda ninguna huella. Es la causa de que estos dos bugs
    solo se puedan describir como "a veces".
-3. **Cobertura de tests**: 5 tests de formateadores; `ExampleInstrumentedTest` es la plantilla vacía.
+3. **Cobertura de tests**: 8 tests de formateadores; `ExampleInstrumentedTest` es la plantilla vacía.
    Cero tests de `TargetDetector`, `StatisticsViewModel`, `TargetConfigViewModel` o la máquina de estados.
 4. **`exportSchema = false`**: imposibilita los tests de migración de Room.
 5. **Duplicación catálogo ↔ `ShortContentApps`**: los paquetes y la identidad visual de las tres apps

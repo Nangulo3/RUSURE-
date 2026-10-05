@@ -8,10 +8,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Working rules (confirmed by the user — do not violate)
 
-1. **If a change would alter observable user-facing behaviour and the expected behaviour is not explicitly defined, ASK FIRST.** Do not decide UX/product on your own, even when the answer seems obvious or a similar implementation already exists. (`docs/DECISIONS.md` D-003)
-2. Order of work: **understand → document → decide → design → implement**. Don't refactor or "fix while passing by" during an investigation phase; document the problem instead. (D-004)
-3. Never turn *current* behaviour into *expected* behaviour. `docs/DEEP_INIT_REPORT.md` = how it works today; `docs/DECISIONS.md` = what the user decided it must do; unconfirmed things stay as open questions.
-4. The user delegates plan execution to a Sonnet subagent in auto mode — plan first, execute after approval.
+> Single source of truth for these rules, for Claude Code AND the Claude Desktop project
+> (which reads this section from the repo). Keep it self-contained and short.
+
+1. **Ask first.** If a change would alter observable behaviour and the expected behaviour is not
+   explicitly defined in `docs/DECISIONS.md`, ask before implementing — even if the answer seems
+   obvious or a similar implementation exists. (D-003)
+2. **Order of work:** understand → document → decide → design → implement. During investigation,
+   don't refactor or fix in passing; document the problem. (D-004)
+3. **Current ≠ expected.** `DEEP_INIT_REPORT.md` describes today's code; `DECISIONS.md` is the spec.
+   Unconfirmed behaviour stays an OPEN QUESTION; never promote it to a decision.
+4. **No per-app patches.** Never `if (Instagram && comments) …`; fix the general rule.
+5. **Cite sources:** file and line when possible (`service/RuSureAccessibilityService.kt:123`) plus
+   document IDs (D-005, B3, §26-B), instead of describing from memory.
+6. **Plan first, execute after approval.** Execution is delegated to a Sonnet subagent in auto mode.
+7. **Test safety net (D-010).** Any change in `service/` or `domain/engine/` keeps
+   `testDebugUnitTest` green. `spec/` failure = regression. `current/` failure = unconfirmed
+   behaviour changed → ask first. Exit/foreground/timing changes also require
+   `docs/DEVICE_CHECKLIST.md` on a real device.
 
 ## Documentation map
 
@@ -20,14 +34,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `docs/DEEP_INIT_REPORT.md` | Full audit (2026-09-13): architecture, event system, state machine, timers, concurrency, persistence, UI, bugs B1–B14, suspicious behaviours S1–S14, edge cases E1–E28, 12 open questions |
 | `docs/DECISIONS.md` | Only user-confirmed behaviour + the list of open questions |
 | `CLAUDE.md` (this file) | Stable operating context |
-| `docs/CLAUDE_PROJECT.md` | Setup of the Claude Desktop *Project* for RuSure: its custom instructions, which repo paths to connect via the GitHub connector, and the push→Sync routine. Keep its instructions block in sync with this file. |
+| `docs/CLAUDE_PROJECT.md` | Setup of the Claude Desktop *Project* for RuSure: its custom instructions, which repo paths to connect via the GitHub connector, and the push→Sync routine. |
 
 ## Commands
 
 ```powershell
 .\gradlew.bat :app:assembleDebug          # build debug APK
 .\gradlew.bat :app:compileDebugKotlin      # fast compile check
-.\gradlew.bat :app:testDebugUnitTest       # run JVM unit tests (currently only FormattersTest, 5 tests)
+.\gradlew.bat :app:testDebugUnitTest       # run JVM unit tests (currently only FormattersTest, 8 tests)
 .\gradlew.bat :app:installDebug            # install on connected device/emulator
 .\gradlew.bat :app:connectedDebugAndroidTest   # instrumented tests (needs device)
 ```
@@ -93,9 +107,9 @@ Because IME (keyboard), SystemUI and system dialogs emit events with **their own
 - **D-007**: internal navigation (comments, profile, search, feed) is immune to friction for as long as the app stays foreground — current behaviour, now confirmed as intentional.
 - **D-008**: the continuous-use reminder measures time **in the app** (including internal navigation), while the time shown in Stats counts only the visible section. This asymmetry is deliberate.
 
-Do not implement these without being asked, and never patch the symptoms per-app (`if Instagram && comments …`).
+Do not implement these without being asked.
 
-The service never inspects `getWindows()`/`AccessibilityWindowInfo` (though `flagRetrieveInteractiveWindows` is enabled), `event.className` or `event.windowId`.
+`getWindows()`/`AccessibilityWindowInfo` is used in exactly one place: `hasApplicationWindow()`, inside the delayed exit confirmation (D-005). Nothing else in the service inspects the window list, `event.className` or `event.windowId`.
 
 ### Stats
 `UsageSession` rows are the source of truth: openings = row count in the window, usage time = `SUM(activeDurationMillis)`, last use = `MAX(startEpochMillis)`, interruptions = `SUM(interruptions)`, cancelled = `SUM(cancelledAccesses)`. Two consumption paths: SQL aggregates over 24 h (`observeStatsSince`, used by dashboard and friction screen) and raw sessions over 14 days aggregated in memory by `StatisticsViewModel` (used by the three statistics screens). `MockStatistics` still exists but only feeds `@Preview`.
