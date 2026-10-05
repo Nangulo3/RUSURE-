@@ -20,6 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `docs/DEEP_INIT_REPORT.md` | Full audit (2026-09-13): architecture, event system, state machine, timers, concurrency, persistence, UI, bugs B1–B14, suspicious behaviours S1–S14, edge cases E1–E28, 12 open questions |
 | `docs/DECISIONS.md` | Only user-confirmed behaviour + the list of open questions |
 | `CLAUDE.md` (this file) | Stable operating context |
+| `docs/CLAUDE_PROJECT.md` | Setup of the Claude Desktop *Project* for RuSure: its custom instructions, which repo paths to connect via the GitHub connector, and the push→Sync routine. Keep its instructions block in sync with this file. |
 
 ## Commands
 
