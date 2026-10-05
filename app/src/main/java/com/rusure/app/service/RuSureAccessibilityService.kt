@@ -4,7 +4,9 @@ import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.PowerManager
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import com.rusure.app.data.local.entity.AppTargetConfig
@@ -127,14 +129,53 @@ class RuSureAccessibilityService : AccessibilityService() {
     /** Acción a aplicar al perder visibilidad/foco un objetivo. */
     private enum class SuspendAction { SUSPEND, TIGHTEN, CLOSE, NONE }
 
+    // --- Traza de diagnóstico ---
+
+    /**
+     * La traza solo existe en compilaciones depurables. Se decide con el flag del propio paquete en
+     * lugar de `BuildConfig.DEBUG` para no tener que activar `buildFeatures.buildConfig`.
+     */
+    private val traceEnabled: Boolean by lazy {
+        (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    }
+
+    /**
+     * Registra un paso del motor en `RuSure/Engine` (ver `docs/DEVICE_CHECKLIST.md`). El mensaje se
+     * construye de forma perezosa: en release no se evalúa.
+     *
+     * **Nunca** se registra texto ni descripciones de contenido de los nodos: la traza solo contiene
+     * nombres de paquete, claves de catálogo, estados y marcas de tiempo.
+     */
+    private inline fun trace(message: () -> String) {
+        if (traceEnabled) Log.d(TRACE_TAG, message())
+    }
+
+    /** Estado por objetivo, para acompañar a cada evento/transición en la traza. */
+    private fun runtimesSnapshot(): String = synchronized(lock) {
+        if (runtimes.isEmpty()) {
+            "-"
+        } else {
+            runtimes.entries.joinToString(" ") { (key, runtime) ->
+                val suspended = when {
+                    runtime.suspendedAtMillis == 0L -> ""
+                    runtime.suspendGraceMillis == NO_EXPIRY -> "/susp(sin expiracion)"
+                    else -> "/susp(${runtime.suspendGraceMillis}ms)"
+                }
+                "$key=${runtime.state}$suspended"
+            }
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
 
         lastSeenPaused = pauseController.isPaused()
+        trace { "servicio conectado | pausado=$lastSeenPaused" }
 
         serviceScope.launch {
             repository.observeEnabledTargets().collectLatest { targets ->
                 enabledTargets = targets
+                trace { "objetivos habilitados | ${targets.joinToString(" ") { "${it.catalogKey}:${it.targetType}:${it.entryAction}" }}" }
             }
         }
 
@@ -160,6 +201,10 @@ class RuSureAccessibilityService : AccessibilityService() {
                 // APERTURA real de la app; los cambios de ventana del mismo paquete son navegación
                 // interna (comentarios, perfil, buscador, etc.).
                 val freshForeground = pkg != currentForegroundPackage
+                trace {
+                    "evento WINDOW_STATE | pkg=$pkg fresco=$freshForeground " +
+                        "primerPlano=$currentForegroundPackage estados=[${runtimesSnapshot()}]"
+                }
                 if (freshForeground) {
                     onForegroundPackageChanged(pkg)
                 }
@@ -175,6 +220,10 @@ class RuSureAccessibilityService : AccessibilityService() {
                 val now = System.currentTimeMillis()
                 if (now - lastContentEvalMillis < CONTENT_EVAL_THROTTLE_MILLIS) return
                 lastContentEvalMillis = now
+                trace {
+                    "evento WINDOW_CONTENT | pkg=$pkg enPrimerPlano=${pkg == currentForegroundPackage} " +
+                        "primerPlano=$currentForegroundPackage estados=[${runtimesSnapshot()}]"
+                }
                 if (pkg == currentForegroundPackage) {
                     // freshForeground=false: no dispara gates nuevos (respeta "solo al abrir"),
                     // pero permite reimponer el HOME si la app global está BLOCKED y sigue arriba.
@@ -189,6 +238,7 @@ class RuSureAccessibilityService : AccessibilityService() {
     override fun onInterrupt() { /* No-op: no usamos feedback hablado. */ }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        trace { "servicio desvinculado | estados=[${runtimesSnapshot()}]" }
         serviceScope.cancel()
         return super.onUnbind(intent)
     }
@@ -199,7 +249,10 @@ class RuSureAccessibilityService : AccessibilityService() {
         // Pantalla apagándose o teléfono bloqueándose: el salto a keyguard/systemui NO es una salida
         // real de la app. No reclasificar el primer plano ni suspender como segundo plano; al
         // desbloquear, el objetivo retoma sin fricción y el límite no avanzó (ver isDeviceActive()).
-        if (!isDeviceActive()) return
+        if (!isDeviceActive()) {
+            trace { "primer plano IGNORADO (dispositivo inactivo) | pkg=$newPackage" }
+            return
+        }
 
         val previous = currentForegroundPackage
         currentForegroundPackage = newPackage
@@ -207,20 +260,34 @@ class RuSureAccessibilityService : AccessibilityService() {
         // Volver al paquete cuya salida estaba pendiente de confirmar: nunca llegó a salir (p. ej. se
         // cerró el teclado). Se cancela la salida sin haber suspendido nada.
         val returnedFromPendingExit = synchronized(lock) { pendingExits.remove(newPackage) != null }
-        if (returnedFromPendingExit) return
+        if (returnedFromPendingExit) {
+            trace { "primer plano $previous -> $newPackage | salida pendiente CANCELADA (regreso)" }
+            return
+        }
 
-        if (previous == null) return
+        if (previous == null) {
+            trace { "primer plano (sin anterior) -> $newPackage" }
+            return
+        }
 
         // NO se suspende aquí. Un evento de otro paquete es solo un INDICIO de salida: se anota como
         // salida pendiente y el ticker la confirma o la descarta en confirmPendingExits(). Así, las
         // ventanas auxiliares (teclado del buscador o de los comentarios, persiana, diálogos) dejan
         // de interpretarse como "el usuario salió de la app" y no rearman la fricción.
-        synchronized(lock) {
+        val recorded = synchronized(lock) {
             if (enabledTargets.none { it.packageName == previous }) return
             // El reloj de observación se cuenta desde el PRIMER indicio, no desde el último evento.
             if (!pendingExits.containsKey(previous)) {
                 pendingExits[previous] = System.currentTimeMillis()
+                true
+            } else {
+                false
             }
+        }
+        trace {
+            val estado = if (recorded) "ANOTADA" else "ya en observacion"
+            "primer plano $previous -> $newPackage | salida pendiente $estado " +
+                "(confirmacion en ${FOREGROUND_EXIT_CONFIRM_MILLIS}ms)"
         }
     }
 
@@ -261,11 +328,17 @@ class RuSureAccessibilityService : AccessibilityService() {
                         enabledTargets.any { it.packageName == current }
                 }
                 if (!foregroundTakenByAnotherTarget) currentForegroundPackage = packageName
+                trace {
+                    "salida DESCARTADA | pkg=$packageName conserva ventana de aplicacion " +
+                        "primerPlanoDeOtroObjetivo=$foregroundTakenByAnotherTarget " +
+                        "estados=[${runtimesSnapshot()}]"
+                }
                 continue
             }
             val toSuspend = synchronized(lock) {
                 enabledTargets.filter { it.packageName == packageName }.map { it.catalogKey }
             }
+            trace { "salida CONFIRMADA | pkg=$packageName suspende=$toSuspend" }
             // foregroundLeft=true: salida real del primer plano (inicio, otra app, kill). Un gate en
             // curso aquí se considera abandonado.
             toSuspend.forEach { suspendTarget(it, foregroundLeft = true) }
@@ -284,7 +357,10 @@ class RuSureAccessibilityService : AccessibilityService() {
         } catch (_: Exception) {
             null
         }
-        if (visibleWindows.isNullOrEmpty()) return false
+        if (visibleWindows.isNullOrEmpty()) {
+            trace { "ventanas no disponibles | pkg=$packageName (se confirmara la salida)" }
+            return false
+        }
         return visibleWindows.any { window ->
             window != null &&
                 window.type == AccessibilityWindowInfo.TYPE_APPLICATION &&
@@ -297,7 +373,17 @@ class RuSureAccessibilityService : AccessibilityService() {
     private fun handleAppGlobal(pkg: String, freshForeground: Boolean) {
         val config = detector.detectAppTarget(pkg, enabledTargets) ?: return
         val runtime = runtimeFor(config.catalogKey)
-        when (synchronized(lock) { runtime.state }) {
+        val state = synchronized(lock) { runtime.state }
+        trace {
+            val accion = when (state) {
+                GateState.IDLE -> if (freshForeground) "gate INITIAL" else "nada (no fresco)"
+                GateState.ALLOWED -> "reingreso"
+                GateState.BLOCKED -> "reimponer HOME"
+                else -> "nada ($state en curso)"
+            }
+            "APP_GLOBAL ${config.catalogKey} | estado=$state fresco=$freshForeground -> $accion"
+        }
+        when (state) {
             // App global (ej. TikTok): la fricción se dispara EXCLUSIVAMENTE en la apertura real
             // de la app (entrada fresca a primer plano) o tras reiniciarla por completo. Mientras
             // el objetivo permanezca IDLE por navegación interna del mismo paquete (comentarios,
@@ -319,12 +405,24 @@ class RuSureAccessibilityService : AccessibilityService() {
         }
         if (sections.isEmpty()) return
 
-        val root = rootInActiveWindow ?: return // null transitorio: no concluir que se salió.
+        val root = rootInActiveWindow ?: run {
+            trace { "SECCION $pkg | arbol no disponible (sin conclusion)" }
+            return // null transitorio: no concluir que se salió.
+        }
         val detected = detector.detectSection(root, pkg, enabledTargets)
 
         if (detected != null) {
             val runtime = runtimeFor(detected.catalogKey)
             val state = synchronized(lock) { runtime.state }
+            trace {
+                val accion = when (state) {
+                    GateState.IDLE -> "gate INITIAL"
+                    GateState.ALLOWED -> "reingreso"
+                    GateState.BLOCKED -> "reimponer HOME"
+                    else -> "nada ($state en curso)"
+                }
+                "SECCION ${detected.catalogKey} DETECTADA | estado=$state -> $accion"
+            }
             when (state) {
                 GateState.IDLE -> triggerGate(detected, GateMode.INITIAL)
                 GateState.ALLOWED -> handleAllowedReentry(detected)
@@ -338,6 +436,7 @@ class RuSureAccessibilityService : AccessibilityService() {
             // cerrar las bloqueadas (salir de la sección las libera para re-bloquear al reentrar).
             // foregroundLeft=false: el paquete sigue en primer plano (solo dejó de detectarse la
             // sección), así que un gate en curso (GATING) NO se aborta.
+            trace { "SECCION no detectada en $pkg | nav. interna -> suspende ${sections.map { it.catalogKey }}" }
             sections.forEach { section -> suspendTarget(section.catalogKey, foregroundLeft = false) }
         }
     }
@@ -364,11 +463,18 @@ class RuSureAccessibilityService : AccessibilityService() {
             settleScanInProgress = true
         }
 
+        trace { "settle scan programado | pkg=$pkg" }
         serviceScope.launch {
             try {
+                var acumulado = 0L
                 for (delayMillis in SETTLE_SCAN_DELAYS_MILLIS) {
                     delay(delayMillis)
-                    if (pkg != currentForegroundPackage) break
+                    acumulado += delayMillis
+                    if (pkg != currentForegroundPackage) {
+                        trace { "settle scan abortado (+${acumulado}ms) | primerPlano=$currentForegroundPackage" }
+                        break
+                    }
+                    trace { "settle scan +${acumulado}ms | pkg=$pkg" }
                     evaluateSections(pkg)
                 }
             } finally {
@@ -383,6 +489,7 @@ class RuSureAccessibilityService : AccessibilityService() {
         // Protección en pausa global (ver docs/DECISIONS.md D-009): deja pasar sin fricción,
         // incluso a un objetivo BLOCK. Antes que cualquier otra comprobación.
         if (pauseController.isPaused()) {
+            trace { "gate ${config.catalogKey} $mode | PAUSA GLOBAL -> pasa sin friccion" }
             allowWithoutFriction(config, mode)
             return
         }
@@ -392,6 +499,7 @@ class RuSureAccessibilityService : AccessibilityService() {
         // HOME tiene su propia limitación de frecuencia. El estado pasa a BLOCKED y se mantiene
         // mientras el objetivo siga en primer plano.
         if (config.entryAction == GateAction.BLOCK) {
+            trace { "gate ${config.catalogKey} $mode | entryAction=BLOCK -> bloqueo" }
             blockTarget(config, mode)
             return
         }
@@ -402,7 +510,13 @@ class RuSureAccessibilityService : AccessibilityService() {
         // posterior. (El límite de uso continuo dispara RE_ENTRY muy por encima de esta ventana.)
         synchronized(lock) {
             val now = System.currentTimeMillis()
-            if (now - lastGateTriggerMillis < GATE_COOLDOWN_MILLIS) return
+            if (now - lastGateTriggerMillis < GATE_COOLDOWN_MILLIS) {
+                trace {
+                    "gate ${config.catalogKey} $mode DESCARTADO por cooldown " +
+                        "(${now - lastGateTriggerMillis}ms < ${GATE_COOLDOWN_MILLIS}ms) estado sin cambios"
+                }
+                return
+            }
             lastGateTriggerMillis = now
         }
 
@@ -419,6 +533,7 @@ class RuSureAccessibilityService : AccessibilityService() {
             runtime.suspendGraceMillis = 0L
         }
         activeCatalogKey = null
+        trace { "transicion ${config.catalogKey} -> GATING | $mode ${seconds}s (pantalla de friccion)" }
 
         serviceScope.launch {
             val now = System.currentTimeMillis()
@@ -461,6 +576,7 @@ class RuSureAccessibilityService : AccessibilityService() {
             runtime.suspendGraceMillis = 0L
         }
         activeCatalogKey = config.catalogKey
+        trace { "transicion ${config.catalogKey} -> ALLOWED | sin friccion (pausa global, $mode)" }
 
         if (mode == GateMode.INITIAL) {
             serviceScope.launch {
@@ -494,9 +610,11 @@ class RuSureAccessibilityService : AccessibilityService() {
             }
         }
         if (expired) {
+            trace { "reingreso ${config.catalogKey} | gracia VENCIDA -> cierra y gate INITIAL" }
             closeTarget(config.catalogKey)
             triggerGate(config, GateMode.INITIAL)
         } else {
+            trace { "reingreso ${config.catalogKey} | en gracia -> reanuda sin friccion" }
             activeCatalogKey = config.catalogKey
         }
     }
@@ -536,6 +654,10 @@ class RuSureAccessibilityService : AccessibilityService() {
                     if (foregroundLeft) SuspendAction.CLOSE else SuspendAction.NONE
                 GateState.IDLE -> SuspendAction.NONE
             }
+        }
+        trace {
+            val graceLabel = if (grace == NO_EXPIRY) "sin expiracion" else "${grace}ms"
+            "suspension $catalogKey | dejoPrimerPlano=$foregroundLeft gracia=$graceLabel -> $action"
         }
         when (action) {
             SuspendAction.SUSPEND -> {
@@ -578,6 +700,7 @@ class RuSureAccessibilityService : AccessibilityService() {
                     now - runtime.suspendedAtMillis > runtime.suspendGraceMillis
             }.keys.toList()
         }
+        if (expired.isNotEmpty()) trace { "barrido: gracia vencida -> cierra $expired" }
         expired.forEach { closeTarget(it) }
     }
 
@@ -610,6 +733,7 @@ class RuSureAccessibilityService : AccessibilityService() {
             lastBlockHomeMillis = System.currentTimeMillis()
         }
         activeCatalogKey = null
+        trace { "transicion ${config.catalogKey} -> BLOCKED | $mode -> HOME" }
 
         serviceScope.launch {
             val now = System.currentTimeMillis()
@@ -640,7 +764,10 @@ class RuSureAccessibilityService : AccessibilityService() {
         // Protección en pausa global: no reimponer HOME (el objetivo ya se dejó pasar, ver
         // triggerGate/allowWithoutFriction; este BLOCKED es residual de antes de la pausa y
         // onPauseStarted ya lo cerró, pero por si acaso no se reafirma aquí).
-        if (pauseController.isPaused()) return
+        if (pauseController.isPaused()) {
+            trace { "reimposicion de bloqueo omitida | pausa global" }
+            return
+        }
 
         val shouldPress = synchronized(lock) {
             val now = System.currentTimeMillis()
@@ -651,6 +778,7 @@ class RuSureAccessibilityService : AccessibilityService() {
                 true
             }
         }
+        trace { "reimposicion de bloqueo | HOME=$shouldPress" }
         if (shouldPress) performGlobalAction(GLOBAL_ACTION_HOME)
     }
 
@@ -658,6 +786,10 @@ class RuSureAccessibilityService : AccessibilityService() {
 
     private fun handleDecision(decision: GateDecision) {
         val runtime = runtimeFor(decision.catalogKey)
+        trace {
+            val tipo = if (decision is GateDecision.Continue) "Continuar" else "Salir"
+            "decision ${decision.catalogKey} | $tipo"
+        }
         when (decision) {
             is GateDecision.Continue -> {
                 synchronized(lock) {
@@ -667,6 +799,7 @@ class RuSureAccessibilityService : AccessibilityService() {
                     runtime.suspendGraceMillis = 0L
                 }
                 activeCatalogKey = decision.catalogKey
+                trace { "transicion ${decision.catalogKey} -> ALLOWED | el usuario continuo" }
             }
 
             is GateDecision.Leave -> {
@@ -692,6 +825,7 @@ class RuSureAccessibilityService : AccessibilityService() {
                 // bloqueado, la reactivación se aplica en cuanto vuelva a estar activo.
                 val paused = pauseController.isPaused()
                 if (paused != lastSeenPaused && (paused || isDeviceActive())) {
+                    trace { "flanco de pausa | pausado=$paused estados=[${runtimesSnapshot()}]" }
                     if (paused) onPauseStarted() else onPauseEnded()
                     lastSeenPaused = paused
                 }
@@ -727,6 +861,14 @@ class RuSureAccessibilityService : AccessibilityService() {
                         runtime.continuousMillis >= config.continuousUsageLimitSeconds * 1000L
                 }
 
+                trace {
+                    val (continuo, suspendido) = synchronized(lock) {
+                        runtime.continuousMillis to (runtime.suspendedAtMillis != 0L)
+                    }
+                    "tick $key | estado=${synchronized(lock) { runtime.state }} enUso=$inUse " +
+                        "suspendido=$suspendido limite=${continuo}/${config.continuousUsageLimitSeconds * 1000L}ms"
+                }
+
                 ticksSinceFlush++
                 if (ticksSinceFlush >= FLUSH_EVERY_TICKS) {
                     ticksSinceFlush = 0
@@ -734,6 +876,7 @@ class RuSureAccessibilityService : AccessibilityService() {
                 }
 
                 if (reachedLimit) {
+                    trace { "transicion $key -> LIMIT_REACHED | limite alcanzado -> gate RE_ENTRY" }
                     flushActiveTime(key)
                     synchronized(lock) { runtime.state = GateState.LIMIT_REACHED }
                     activeCatalogKey = null
@@ -754,6 +897,7 @@ class RuSureAccessibilityService : AccessibilityService() {
         val blocked = synchronized(lock) {
             runtimes.filterValues { it.state == GateState.BLOCKED }.keys.toList()
         }
+        trace { "pausa iniciada | cierra bloqueados=$blocked" }
         blocked.forEach { closeTarget(it) }
     }
 
@@ -773,6 +917,7 @@ class RuSureAccessibilityService : AccessibilityService() {
             lastGateTriggerMillis = 0L
             runtimes.filterValues { it.state == GateState.ALLOWED }.keys.toList()
         }
+        trace { "pausa terminada | reevalua=$allowedKeys primerPlano=$currentForegroundPackage" }
         if (allowedKeys.isEmpty()) return
 
         // APP_GLOBAL antes que SECTION: si ambos son candidatos visibles, prioriza el más externo.
@@ -828,6 +973,7 @@ class RuSureAccessibilityService : AccessibilityService() {
             runtime.sessionId = null
             id
         }
+        trace { "transicion $catalogKey -> IDLE | cierre (sesion=$sessionId)" }
         if (sessionId != null) {
             serviceScope.launch { repository.endSession(sessionId, System.currentTimeMillis()) }
         }
@@ -846,6 +992,12 @@ class RuSureAccessibilityService : AccessibilityService() {
         powerManager.isInteractive && !keyguardManager.isKeyguardLocked
 
     companion object {
+        /**
+         * Etiqueta de la traza de diagnóstico (`adb logcat -s RuSure/Engine`). Solo se emite en
+         * compilaciones depurables y nunca contiene texto de los nodos (ver [trace]).
+         */
+        private const val TRACE_TAG = "RuSure/Engine"
+
         private const val TICK_MILLIS = 1000L
         private const val FLUSH_EVERY_TICKS = 5
         private const val CONTENT_EVAL_THROTTLE_MILLIS = 300L
