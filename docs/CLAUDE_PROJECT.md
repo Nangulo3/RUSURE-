@@ -69,3 +69,5 @@ Claude Code. Marca qué está verificado en el repo y qué es suposición. Resp�
   Ese archivo es el que mantiene alineados Desktop y Claude Code.
 - **Las reglas viven solo en `CLAUDE.md`.** Las instrucciones del Proyecto únicamente obligan a
   leerlas; solo hay que tocarlas si cambian nombres de archivos.
+- **Desktop lee solo `main`.** El trabajo va en ramas; cada fase verificada se integra en `main`
+  (fast-forward) antes de pulsar *Sync*. `main` nunca recibe trabajo a medias.
