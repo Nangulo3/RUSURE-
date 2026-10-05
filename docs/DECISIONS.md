@@ -232,6 +232,71 @@ además pasar `docs/DEVICE_CHECKLIST.md` en un dispositivo real.
   el test se mueve a `spec/` o se reescribe.
 * Los tests se nombran por regla, no por app (`D005_auxWindowOverGlobalTarget_30s_noGate`), con
   paquetes ficticios, coherente con la prohibición de parches por app.
+* Los tests de `spec/` cubren **solo decisiones ya implementadas** (D-001, D-002, D-005 … D-009). Los
+  de D-011 y D-012 se escriben al implementarlas, después de F3. Mientras no se implementen, su
+  comportamiento actual queda fijado en `current/` (B15 y S8).
+
+---
+
+## D-011 · Desbloquear el teléfono tras más tiempo que el umbral de D-006 cuenta como apertura nueva
+
+**Estado**: CONFIRMADO
+
+**Comportamiento esperado**
+Bloquear el teléfono estando dentro de una app objetivo se trata **igual que salir de la app**:
+si el tiempo bloqueado supera el umbral de "apertura nueva" de D-006, al desbloquear el regreso
+cuenta como apertura nueva y se aplica la fricción con las mismas reglas que tras una salida real.
+Si no lo supera, se reanuda sin fricción.
+
+**Confirmado por**: Usuario
+**Fecha**: 2026-10-04
+
+**Notas**
+* Sustituye al comportamiento actual S8 (`DEEP_INIT_REPORT.md` §29), rechazado por el usuario en la
+  línea base F1 (paso 8): hoy, al desbloquear, nunca vuelve la fricción
+  (`isDeviceActive()` en `onForegroundPackageChanged` y `confirmPendingExits`).
+* Usa el MISMO umbral que D-006, no uno propio. Mientras #2b siga abierta, hereda su valor
+  provisional, que con bloqueos cortos haría saltar la fricción con frecuencia.
+* "Igual que salir de la app" implica, por coherencia con D-007: en un objetivo SECTION, si el
+  usuario desbloquea fuera de la sección (por ejemplo, en comentarios), la fricción aparece la
+  próxima vez que la sección sea visible, no en el instante del desbloqueo.
+* Sin confirmar (no implementar sin preguntar):
+  - si el tiempo bloqueado se mide desde que el dispositivo deja de estar activo
+    (`isDeviceActive() == false`: pantalla apagada o keyguard) o solo desde el keyguard;
+  - si superar el umbral también cierra la sesión de estadísticas (misma duda que #2b).
+* El reloj del límite de uso continuo (D-008) sigue sin avanzar con el teléfono bloqueado.
+* NO IMPLEMENTADO. Se implementa después de F3 (motor extraído), con su test de `spec/` delante.
+
+---
+
+## D-012 · Una ventana auxiliar no cierra el gate mientras la pantalla de fricción está visible
+
+**Estado**: CONFIRMADO
+
+**Comportamiento esperado**
+Mientras la pantalla de fricción está visible sobre una app objetivo, la aparición de una ventana
+auxiliar (teclado, persiana de notificaciones, diálogo del sistema) **no** cierra el gate, no
+abandona la sesión y no cambia el estado del objetivo. Solo una **salida real** (ir al inicio,
+abrir recientes o cambiar a otra app) cierra el gate.
+
+**Confirmado por**: Usuario
+**Fecha**: 2026-10-04
+
+**Notas**
+* Resuelve la pregunta #14. Corrige el comportamiento descrito en B15 (H1 de la línea base F1):
+  hoy la fricción tapa la app, `hasApplicationWindow(objetivo)` devuelve falso, la salida
+  pendiente se confirma y `suspendTarget` sobre GATING hace CLOSE
+  (`service/RuSureAccessibilityService.kt:535-536`). El "Continuar" posterior deja el objetivo
+  ALLOWED con `sessionId` nulo: se pierde tiempo de uso y la siguiente entrada no gatea.
+* Complementa D-005: la confirmación diferida sigue vigente; lo que cambia es que, durante GATING,
+  la pantalla de fricción no cuenta como prueba de que el usuario salió.
+* Cómo distinguir una salida real de una ventana auxiliar con la fricción encima es una cuestión
+  de diseño; se propone en el plan de implementación, no aquí.
+* Sin confirmar (no implementar sin preguntar):
+  - qué hacer con una decisión que llega para un gate ya cerrado (H2, relacionado con B13 y #9);
+  - bloquear el teléfono con la fricción visible: D-011 lo trata como salida, pero no se ha
+    confirmado para el estado GATING.
+* NO IMPLEMENTADO. Se implementa después de F3, con su test de `spec/` delante.
 
 ---
 
@@ -256,3 +321,5 @@ comportamiento actual, alternativas) está en `docs/DEEP_INIT_REPORT.md` §33.
 | #10 | Promedios y comparativas cuando hay pocos días de datos | PREGUNTA ABIERTA |
 | #11 | Qué hacer con las sesiones huérfanas tras la muerte del proceso | PREGUNTA ABIERTA |
 | #12 | Qué debe significar "aperturas evitadas" en el dashboard | PREGUNTA ABIERTA |
+| #13 | Si volver tras un bloqueo de pantalla debe contar como apertura nueva | **RESUELTA → D-011** |
+| #14 | Qué cuenta como salida mientras la pantalla de fricción está visible | **RESUELTA → D-012** |

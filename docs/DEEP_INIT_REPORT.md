@@ -1498,6 +1498,50 @@ Impacto                BAJO-MEDIO, difícil de reproducir
 Confianza              MEDIA (INFERIDO: depende del ciclo de vida real que aplique el sistema)
 ```
 
+### B15 — Una ventana auxiliar durante el `GATING` cierra el gate y pierde la sesión
+```
+Añadido                2026-10-04, a partir de la línea base en dispositivo (docs/baseline/F1_summary.md,
+                       hallazgo H1). 6 ocurrencias en 20 minutos de uso real.
+
+Comportamiento actual  Con el objetivo en GATING y la pantalla de fricción visible, basta un evento de
+                       otro paquete (el teclado al cerrarse, ~1 s después de aparecer la pantalla) para
+                       que, 3 s más tarde, la salida se confirme y el gate se cierre:
+                         1. onForegroundPackageChanged anota la salida pendiente del objetivo.
+                         2. confirmPendingExits -> hasApplicationWindow(objetivo) devuelve FALSE, porque
+                            la Activity translúcida de fricción OCLUYE la app y el sistema deja de
+                            listar su ventana TYPE_APPLICATION (la lista existe: no se registra
+                            "ventanas no disponibles").
+                         3. suspendTarget(foregroundLeft = true) sobre GATING -> SuspendAction.CLOSE.
+                         4. closeTarget: sesión cerrada, estado IDLE, sessionId = null.
+                         5. El usuario pulsa "Continuar": handleDecision pone ALLOWED sin comprobar el
+                            estado previo ni reabrir sesión.
+                       Resultado: el objetivo queda ALLOWED SIN SESIÓN. flushActiveTime descarta todo
+                       el tiempo (sessionId null), los RE_ENTRY no registran interrupción
+                       (`runtime.sessionId?.let`), y la siguiente entrada no gatea (el estado no es
+                       IDLE). En la línea base, ~7 minutos de uso real no se contabilizaron.
+
+Causa probable         hasApplicationWindow() mide "¿el objetivo tiene ventana de aplicación?" sin tener
+                       en cuenta que la propia pantalla de fricción es lo que la oculta. La raíz del
+                       paso 3 es ANTERIOR a D-005 (GATING + foregroundLeft -> CLOSE ya existía), pero
+                       D-005 la volvió determinista al añadir la comprobación de ventanas.
+
+Evidencia              service/RuSureAccessibilityService.kt: confirmPendingExits (239-273),
+                       hasApplicationWindow (281-293), suspendTarget (535-536), handleDecision (659-679)
+                       Traza: baseline F1, pasos 1, 4, 5 y 8 (`salida CONFIRMADA` durante GATING ->
+                       `suspension ... -> CLOSE` -> `cierre (sesion=NNNN)` -> `decision | Continuar`)
+
+Impacto                ALTO. Pérdida silenciosa de medición y agujero en la protección: tras el fallo,
+                       el objetivo queda utilizable sin fricción hasta que abandone el primer plano.
+
+Confianza              ALTA (VERIFICADO EXPERIMENTALMENTE en dispositivo)
+
+Comportamiento esperado CONFIRMADO → D-012 (no implementado)
+
+Relación con B5/E8     Son casos inversos: B5/E8 describen GATING sin pantalla; B15 es pantalla sin
+                       GATING. La decisión sobre la pantalla huérfana sigue abierta (#9, y H2 del
+                       resumen de la línea base).
+```
+
 ---
 
 # 29. Comportamientos sospechosos
@@ -1725,6 +1769,37 @@ Comportamiento actual  Muestra SUM(interruptions), es decir, el número de pausa
 Alternativas           A. Renombrar a "pausas mostradas". B. Cambiar el dato a cancelledAccesses.
                        C. Mostrar ambos.
 Decisión requerida     ¿Cuál?
+```
+
+## Pregunta #13 — ¿Volver tras un bloqueo de pantalla debe contar como apertura nueva?
+```
+Contexto               isDeviceActive() hace que apagar la pantalla o bloquear el teléfono no se
+                       considere nunca una salida de la app objetivo (S8).
+Comportamiento actual  Al desbloquear, el objetivo sigue ALLOWED con su sesión abierta y el mismo
+                       continuousMillis: nunca vuelve la fricción, por largo que haya sido el bloqueo.
+                       Verificado en dispositivo (línea base F1, paso 8: 20 s de bloqueo, sin fricción,
+                       reloj del límite congelado).
+Alternativas           A. Mantener (actual). B. Tratar el bloqueo como una salida con el MISMO umbral
+                       que D-006. C. Umbral propio para el bloqueo, distinto del de la salida.
+Decisión requerida     ¿Cuál?
+RESUELTA (2026-10-04) → opción B: mismo umbral que D-006. Ver docs/DECISIONS.md D-011.
+                       Siguen abiertos: si el tiempo se mide desde la pantalla apagada o solo desde el
+                       keyguard, y si superar el umbral cierra además la sesión de estadísticas (#2b).
+```
+
+## Pregunta #14 — ¿Qué cuenta como salida mientras la pantalla de fricción está visible?
+```
+Contexto               La Activity de fricción es translúcida y se superpone a la app objetivo, que deja
+                       de aparecer en la lista de ventanas como TYPE_APPLICATION.
+Comportamiento actual  Un evento de otro paquete durante el GATING hace que la salida se confirme a los
+                       3 s, se cierre el gate y se pierda la sesión (B15).
+Alternativas           A. Mantener. B. No evaluar salidas pendientes mientras el objetivo esté en
+                       GATING. C. Excluir la propia ventana de fricción del criterio de oclusión, de
+                       modo que solo una ventana de aplicación AJENA cuente como salida.
+Decisión requerida     ¿Qué debe cerrar un gate en curso?
+RESUELTA (2026-10-04) → una ventana auxiliar NO cierra el gate; solo una salida real (inicio,
+                       recientes, otra app). Ver docs/DECISIONS.md D-012. La elección entre B y C es
+                       de diseño y se decide en el plan de implementación.
 ```
 
 ---

@@ -31,8 +31,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | File | Contents |
 |---|---|
-| `docs/DEEP_INIT_REPORT.md` | Full audit (2026-09-13): architecture, event system, state machine, timers, concurrency, persistence, UI, bugs B1–B14, suspicious behaviours S1–S14, edge cases E1–E28, 12 open questions |
-| `docs/DECISIONS.md` | Only user-confirmed behaviour + the list of open questions |
+| `docs/DEEP_INIT_REPORT.md` | Full audit (2026-09-13, extended 2026-10-04): architecture, event system, state machine, timers, concurrency, persistence, UI, bugs B1–B15, suspicious behaviours S1–S14, edge cases E1–E28, 14 open questions |
+| `docs/DECISIONS.md` | Only user-confirmed behaviour (D-001…D-012) + the list of open questions |
+| `docs/baseline/F1_summary.md` | On-device baseline (2026-10-04): what the engine actually did across 8 friction flows, read from the `RuSure/Engine` trace. Descriptive, not spec. Source of B15. |
 | `CLAUDE.md` (this file) | Stable operating context |
 | `docs/CLAUDE_PROJECT.md` | Setup of the Claude Desktop *Project* for RuSure: its custom instructions, which repo paths to connect via the GitHub connector, and the push→Sync routine. |
 
@@ -106,6 +107,8 @@ Because IME (keyboard), SystemUI and system dialogs emit events with **their own
 - **D-006**: the "time away that makes a return a new opening" becomes a **per-target user setting** (today the `BACKGROUND_GRACE_MILLIS = 7_000` constant). Default/range still undecided.
 - **D-007**: internal navigation (comments, profile, search, feed) is immune to friction for as long as the app stays foreground — current behaviour, now confirmed as intentional.
 - **D-008**: the continuous-use reminder measures time **in the app** (including internal navigation), while the time shown in Stats counts only the visible section. This asymmetry is deliberate.
+- **D-011 — NOT IMPLEMENTED**: locking the phone inside a target is treated like leaving the app. If the locked time exceeds D-006's threshold (the *same* setting, not its own), unlocking counts as a new opening and friction applies. Today `isDeviceActive()` makes a lock of any length friction-free (S8).
+- **D-012 — NOT IMPLEMENTED**: while the friction screen is visible, an auxiliary window (IME, shade, system dialog) must not close the gate or drop the session; only a real exit (home, recents, another app) does. Fixes B15.
 
 Do not implement these without being asked.
 
