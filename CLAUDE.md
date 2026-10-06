@@ -68,8 +68,8 @@ This project runs on a very new toolchain (AGP 9.2.1, Kotlin 2.2.10) with non-ob
 Single-module app under package `com.rusure.app`, layered:
 
 - **data/** — Room (`RuSureDatabase` v4, entities `AppTargetConfig` + `UsageSession`, DAOs, `Converters`), `RuSureRepository` (the only persistence facade), `DefaultTargetsSeeder` (seeds the curated catalog on first run **only if the table is empty**, all targets disabled).
-- **domain/** — `catalog/TargetCatalog`, `detection/TargetDetector`, `gate/*`, `model/*`.
-- **service/** — `RuSureAccessibilityService` (the engine, ~676 lines: detection + policy + timing + stats writes).
+- **domain/** — `catalog/TargetCatalog`, `detection/TargetDetector`, **`engine/*`** (`GateEngine` = the state machine, plus `Seams.kt` and `EngineContracts.kt`), `gate/*`, `model/*`, `pause/PauseController`.
+- **service/** — `RuSureAccessibilityService`: the **Android adapter** (~254 lines). Receives accessibility events, provides the real `Clock` / `WindowProbe` / `DeviceState` / `AppTargetProbe` / `SectionProbe` / `SessionStore` / `EngineEffects` / `Tracer`, and runs the ticker loop. Since F3 **no policy lives here** — if you are about to add an `if` about *when* to interrupt, it belongs in `GateEngine`.
 - **ui/** — `dashboard/`, `statistics/`, `config/`, `interruption/`, `navigation/`, `settings/`, `theme/`, `util/`.
 - **di/** — `AppContainer` (manual singletons).
 
@@ -80,7 +80,7 @@ Single-module app under package `com.rusure.app`, layered:
 `AppTargetConfig` (DB) stores only user-tunable params (timers, enabled, `entryAction`). The *detection signatures* (resource-ids + ES/EN content-descriptions) live in code in `TargetCatalog`, keyed by `catalogKey`. This lets you update fragile matchers (Reels/Shorts viewIds change between app versions) without DB migrations. To support a new app/section, add a `CatalogEntry` — **but note the seeder never re-seeds existing installs** (bug B3).
 
 ### The friction lifecycle (core mental model)
-`RuSureAccessibilityService` keeps an in-memory `TargetRuntime` per target (`GateState` + sessionId + clocks + suspension). It is NOT persisted; process death loses it.
+`GateEngine` (`domain/engine/`) keeps an in-memory `TargetRuntime` per target (`GateState` + sessionId + clocks + suspension). It is NOT persisted; process death loses it. Its inputs are `onStarted`, `onTargetsChanged`, `onWindowStateChanged`, `onContentChanged`, `onTick` and `onDecision`; its only outputs are `EngineEffects` (`launchFriction`, `goHome`), `SessionStore` and `GateCoordinator`. Being free of Android, it is testable on the JVM with the clock, windows and device state injected (D-010).
 
 States: `IDLE → GATING → ALLOWED → LIMIT_REACHED → (RE_ENTRY) GATING …`, plus `BLOCKED` for `entryAction = BLOCK`.
 
@@ -94,7 +94,7 @@ States: `IDLE → GATING → ALLOWED → LIMIT_REACHED → (RE_ENTRY) GATING …
 The Activity↔Service contract is entirely `GateCoordinator`; they never reference each other directly. The friction Activity blocks the back gesture, so the only exits are the two buttons.
 
 ### How "the user left the app" is inferred — and why it is fragile
-There is **no direct signal**. The service treats *any* accessibility event whose `packageName` differs from `currentForegroundPackage` as "the target left the foreground" (`onForegroundPackageChanged`), and then:
+There is **no direct signal**. `GateEngine` treats *any* accessibility event whose `packageName` differs from `currentForegroundPackage` as "the target left the foreground" (`onForegroundPackageChanged`), and then:
 
 - internal navigation (section no longer detected, same package) → suspension with **`NO_EXPIRY`** grace → never re-gates;
 - foreground left (event from another package) → suspension with **7 s** grace (`BACKGROUND_GRACE_MILLIS`) → `sweepExpiredSuspensions` closes the session and returns the state to `IDLE`;

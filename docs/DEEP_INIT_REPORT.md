@@ -1516,7 +1516,9 @@ Comportamiento actual  Con el objetivo en GATING y la pantalla de fricción visi
                          5. El usuario pulsa "Continuar": handleDecision pone ALLOWED sin comprobar el
                             estado previo ni reabrir sesión.
                        Resultado: el objetivo queda ALLOWED SIN SESIÓN. flushActiveTime descarta todo
-                       el tiempo (sessionId null), los RE_ENTRY no registran interrupción
+                       el tiempo (sessionId null), los RE_ENTRY no registran interrupción ni el
+                       "No quiero continuar" posterior registra la cancelación (verificado en F3,
+                       paso 6: incrementCancelled recibe sessionId nulo)
                        (`runtime.sessionId?.let`), y la siguiente entrada no gatea (el estado no es
                        IDLE). En la línea base, ~7 minutos de uso real no se contabilizaron.
 
