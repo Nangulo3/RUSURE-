@@ -15,6 +15,7 @@ import com.rusure.app.domain.model.TargetType
 import com.rusure.app.domain.pause.PauseSource
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 
 /**
  * Dobles y andamiaje para probar [GateEngine] en la JVM (ver `docs/DECISIONS.md` D-010).
@@ -250,9 +251,16 @@ class EngineHarness(val scope: TestScope) {
         while (remaining >= GateEngine.TICK_MILLIS) {
             scope.advanceTimeBy(GateEngine.TICK_MILLIS)
             engine.onTick()
+            // El tick puede lanzar corrutinas (cerrar la sesión, volcar tiempo): hay que dejarlas
+            // correr, igual que en producción corren en Dispatchers.Default justo después. Sin esto,
+            // el último tick de un avance deja su escritura sin ejecutar.
+            scope.runCurrent()
             remaining -= GateEngine.TICK_MILLIS
         }
-        if (remaining > 0) scope.advanceTimeBy(remaining)
+        if (remaining > 0) {
+            scope.advanceTimeBy(remaining)
+            scope.runCurrent()
+        }
     }
 }
 

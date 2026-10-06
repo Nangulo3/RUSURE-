@@ -33,7 +33,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 |---|---|
 | `docs/DEEP_INIT_REPORT.md` | Full audit (2026-09-13, extended 2026-10-04): architecture, event system, state machine, timers, concurrency, persistence, UI, bugs B1–B15, suspicious behaviours S1–S14, edge cases E1–E28, 14 open questions |
 | `docs/DECISIONS.md` | Only user-confirmed behaviour (D-001…D-012) + the list of open questions |
-| `docs/baseline/F1_summary.md` | On-device baseline (2026-10-04): what the engine actually did across 8 friction flows, read from the `RuSure/Engine` trace. Descriptive, not spec. Source of B15. |
+| `docs/DEVICE_CHECKLIST.md` | The 12-step on-device checklist required by rule 7, plus the capture method that actually survives (markers + dump-to-temp-then-append; never clear the buffer, never `>` onto the accumulated file). |
+| `docs/baseline/F1_summary.md` | On-device baseline (2026-10-04): what the engine actually did across 8 friction flows, read from the `RuSure/Engine` trace. Descriptive, not spec. Source of B15. Also holds the F4 pause verification. |
+| `docs/baseline/F2_verification.md`, `F3_verification.md` | Proof that the seams (F2) and the engine extraction (F3) changed nothing observable, contrasted against the baseline. |
 | `CLAUDE.md` (this file) | Stable operating context |
 | `docs/CLAUDE_PROJECT.md` | Setup of the Claude Desktop *Project* for RuSure: its custom instructions, which repo paths to connect via the GitHub connector, and the push→Sync routine. |
 
@@ -42,7 +44,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```powershell
 .\gradlew.bat :app:assembleDebug          # build debug APK
 .\gradlew.bat :app:compileDebugKotlin      # fast compile check
-.\gradlew.bat :app:testDebugUnitTest       # run JVM unit tests (currently only FormattersTest, 8 tests)
+.\gradlew.bat :app:testDebugUnitTest       # run JVM unit tests (41: FormattersTest + engine spec/ & current/)
 .\gradlew.bat :app:installDebug            # install on connected device/emulator
 .\gradlew.bat :app:connectedDebugAndroidTest   # instrumented tests (needs device)
 ```
