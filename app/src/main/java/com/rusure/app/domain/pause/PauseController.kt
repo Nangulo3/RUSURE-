@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
  * proceso y a un reinicio del dispositivo. Singleton de proceso: el servicio y la UI del
  * dashboard comparten esta misma instancia (ver [com.rusure.app.di.AppContainer]).
  */
-class PauseController(private val prefs: SharedPreferences) {
+class PauseController(private val prefs: SharedPreferences) : PauseSource {
 
     private val _pausedUntilMillis = MutableStateFlow(prefs.getLong(KEY_PAUSED_UNTIL, 0L))
 
@@ -24,7 +24,13 @@ class PauseController(private val prefs: SharedPreferences) {
     val pausedUntilMillis: StateFlow<Long> = _pausedUntilMillis
 
     /** true si, en [now], la pausa global sigue vigente. */
-    fun isPaused(now: Long = System.currentTimeMillis()): Boolean = now < pausedUntilMillis.value
+    override fun isPaused(now: Long): Boolean = now < pausedUntilMillis.value
+
+    /**
+     * Igual que [isPaused] con el reloj del sistema. Para los llamadores que no tienen una costura
+     * de reloj (la UI); el motor usa la sobrecarga con [now] para medirla con su propio [Clock].
+     */
+    fun isPaused(): Boolean = isPaused(System.currentTimeMillis())
 
     /** Inicia (o reinicia) la pausa global por [PAUSE_DURATION_MILLIS] a partir de ahora. */
     fun pause() {

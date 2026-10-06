@@ -8,7 +8,7 @@ import com.rusure.app.domain.gate.GateRequest
 import com.rusure.app.domain.gate.GateState
 import com.rusure.app.domain.model.GateAction
 import com.rusure.app.domain.model.TargetType
-import com.rusure.app.domain.pause.PauseController
+import com.rusure.app.domain.pause.PauseSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -36,7 +36,7 @@ class GateEngine(
     private val sessions: SessionStore,
     private val effects: EngineEffects,
     private val gateCoordinator: GateCoordinator,
-    private val pauseController: PauseController,
+    private val pauseSource: PauseSource,
     private val scope: CoroutineScope,
     private val tracer: Tracer = Tracer.None
 ) {
@@ -58,7 +58,7 @@ class GateEngine(
     private var lastContentEvalMillis = 0L
 
     /**
-     * Último valor de [PauseController.isPaused] observado por el ticker. Permite detectar los
+     * Último valor de [PauseSource.isPaused] observado por el ticker. Permite detectar los
      * flancos de inicio/fin de la pausa global (ver [onPauseStarted]/[onPauseEnded]) sin depender
      * de coleccionar el [kotlinx.coroutines.flow.StateFlow] por separado. Acceso solo desde el
      * ticker (hilo único).
@@ -143,7 +143,7 @@ class GateEngine(
 
     /** El motor arranca: toma el estado inicial de la pausa global. */
     fun onStarted() {
-        lastSeenPaused = pauseController.isPaused()
+        lastSeenPaused = pauseSource.isPaused(clock.now())
         tracer.trace { "servicio conectado | pausado=$lastSeenPaused" }
     }
 
@@ -230,11 +230,11 @@ class GateEngine(
      * recordatorio de uso continuo.
      */
     fun onTick() {
-        // Flanco de inicio/fin de la pausa global (ver PauseController, D-009). Se exige el
+        // Flanco de inicio/fin de la pausa global (ver PauseSource, D-009). Se exige el
         // dispositivo activo para procesar un FIN, igual que el resto de la lógica de
         // salida/reingreso: si la pausa vence con la pantalla apagada o el teléfono
         // bloqueado, la reactivación se aplica en cuanto vuelva a estar activo.
-        val paused = pauseController.isPaused()
+        val paused = pauseSource.isPaused(clock.now())
         if (paused != lastSeenPaused && (paused || isDeviceActive())) {
             tracer.trace { "flanco de pausa | pausado=$paused estados=[${runtimesSnapshot()}]" }
             if (paused) onPauseStarted() else onPauseEnded()
@@ -524,7 +524,7 @@ class GateEngine(
     private fun triggerGate(config: AppTargetConfig, mode: GateMode) {
         // Protección en pausa global (ver docs/DECISIONS.md D-009): deja pasar sin fricción,
         // incluso a un objetivo BLOCK. Antes que cualquier otra comprobación.
-        if (pauseController.isPaused()) {
+        if (pauseSource.isPaused(clock.now())) {
             tracer.trace { "gate ${config.catalogKey} $mode | PAUSA GLOBAL -> pasa sin friccion" }
             allowWithoutFriction(config, mode)
             return
@@ -599,7 +599,7 @@ class GateEngine(
 
     /**
      * Deja pasar un objetivo sin mostrar fricción porque la protección está en pausa global (ver
-     * [PauseController] y `docs/DECISIONS.md` D-009). Equivale a pulsar "Continuar" sin pantalla:
+     * [PauseSource] y `docs/DECISIONS.md` D-009). Equivale a pulsar "Continuar" sin pantalla:
      * el objetivo pasa a [GateState.ALLOWED] y su tiempo se sigue contando con normalidad. En modo
      * INITIAL reutiliza la sesión abierta (o abre una) SIN incrementar interrupciones, porque no
      * hubo ninguna: la apertura y el tiempo de uso cuentan en estadísticas igual que si la
@@ -793,7 +793,7 @@ class GateEngine(
         // Protección en pausa global: no reimponer HOME (el objetivo ya se dejó pasar, ver
         // triggerGate/allowWithoutFriction; este BLOCKED es residual de antes de la pausa y
         // onPauseStarted ya lo cerró, pero por si acaso no se reafirma aquí).
-        if (pauseController.isPaused()) {
+        if (pauseSource.isPaused(clock.now())) {
             tracer.trace { "reimposicion de bloqueo omitida | pausa global" }
             return
         }
@@ -814,9 +814,9 @@ class GateEngine(
     // --- Pausa global ---
 
     /**
-     * Al iniciarse la pausa global (ver [PauseController], D-009): cierra los objetivos que
+     * Al iniciarse la pausa global (ver [PauseSource], D-009): cierra los objetivos que
      * estaban en [GateState.BLOCKED] para que, mientras la pausa siga activa, el próximo ingreso
-     * entre sin fricción ([triggerGate] lo resuelve al ver [PauseController.isPaused]). No toca
+     * entre sin fricción ([triggerGate] lo resuelve al ver [PauseSource.isPaused]). No toca
      * GATING/LIMIT_REACHED (la pantalla de fricción ya en curso se respeta) ni ALLOWED (sigue
      * contando tiempo con normalidad).
      */
@@ -923,8 +923,8 @@ class GateEngine(
         /** Periodo del ticker de uso. El bucle vive en el adaptador; el cuerpo, en [onTick]. */
         const val TICK_MILLIS = 1000L
 
-        private const val FLUSH_EVERY_TICKS = 5
-        private const val CONTENT_EVAL_THROTTLE_MILLIS = 300L
+        internal const val FLUSH_EVERY_TICKS = 5
+        internal const val CONTENT_EVAL_THROTTLE_MILLIS = 300L
 
         /**
          * Instantes (relativos, acumulativos) en que se re-evalúan las secciones tras un evento de
@@ -932,10 +932,10 @@ class GateEngine(
          * Cubren ~2.6 s en total, suficiente para que el reproductor de Reels/Shorts termine de
          * renderizar sin penalizar el rendimiento.
          */
-        private val SETTLE_SCAN_DELAYS_MILLIS = longArrayOf(400L, 600L, 700L, 900L)
+        internal val SETTLE_SCAN_DELAYS_MILLIS = longArrayOf(400L, 600L, 700L, 900L)
 
         /** Ventana de enfriamiento (debounce) entre activaciones consecutivas: 2.5 s. */
-        private const val GATE_COOLDOWN_MILLIS = 2500L
+        internal const val GATE_COOLDOWN_MILLIS = 2500L
 
         /**
          * Ventana de gracia tras DEJAR el primer plano un objetivo ALLOWED (ir al inicio, otra app o
@@ -947,7 +947,7 @@ class GateEngine(
          * tarda más que esto, de modo que ese flujo supera la gracia y vuelve a gatear (nueva sesión
          * tras pasar a segundo plano).
          */
-        private const val BACKGROUND_GRACE_MILLIS = 7_000L
+        internal const val BACKGROUND_GRACE_MILLIS = 7_000L
 
         /**
          * Tiempo de observación antes de dar por buena una salida del primer plano. Un evento de otro
@@ -959,7 +959,7 @@ class GateEngine(
          * buscador o de los comentarios, persiana, diálogo) quede descartada como falsa salida. La
          * gracia de segundo plano [BACKGROUND_GRACE_MILLIS] se cuenta A PARTIR de la confirmación.
          */
-        private const val FOREGROUND_EXIT_CONFIRM_MILLIS = 3_000L
+        internal const val FOREGROUND_EXIT_CONFIRM_MILLIS = 3_000L
 
         /**
          * Centinela de gracia "sin expiración" para la navegación interna: la sección perdió
@@ -968,12 +968,12 @@ class GateEngine(
          * lo que dure; la suspensión interna solo termina si la app deja el primer plano (se endurece
          * a [BACKGROUND_GRACE_MILLIS]) o si se alcanza el límite de uso continuo.
          */
-        private const val NO_EXPIRY = Long.MAX_VALUE
+        internal const val NO_EXPIRY = Long.MAX_VALUE
 
         /**
          * Frecuencia mínima entre pulsaciones de HOME al reimponer un bloqueo. Suficientemente
          * corta para vencer la animación de arranque de la app sin saturar de acciones globales.
          */
-        private const val BLOCK_REPRESS_THROTTLE_MILLIS = 400L
+        internal const val BLOCK_REPRESS_THROTTLE_MILLIS = 400L
     }
 }

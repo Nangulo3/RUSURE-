@@ -153,7 +153,7 @@ class RuSureAccessibilityService : AccessibilityService() {
             sessions = sessionStore,
             effects = engineEffects,
             gateCoordinator = gateCoordinator,
-            pauseController = pauseController,
+            pauseSource = pauseController,
             scope = serviceScope,
             tracer = tracer
         )
