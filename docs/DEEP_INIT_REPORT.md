@@ -1271,7 +1271,12 @@ ver §33, preguntas #1, #2 y #3.
 
 # 27. Edge cases
 
-Casos límite identificados, con su comportamiento actual (`VERIFICADO EN CÓDIGO` salvo indicación):
+Casos límite identificados, con su comportamiento actual (`VERIFICADO EN CÓDIGO` salvo indicación).
+
+> **E29 se añadió el 2026-10-05** y no salió de leer el código buscándolo, sino de un test: al
+> escribir el de D-009 sobre el fin de la pausa en navegación interna (fase F4), el test falló porque
+> solo alimentaba al motor con `onContentChanged` y el primer plano seguía nulo. Era un defecto del
+> test, pero dejó al descubierto un caso límite real del arranque del servicio.
 
 | # | Caso | Comportamiento actual |
 |---|---|---|
@@ -1303,6 +1308,7 @@ Casos límite identificados, con su comportamiento actual (`VERIFICADO EN CÓDIG
 | E26 | Instagram actualiza sus resource-ids | La detección deja de funcionar en silencio; no hay ningún aviso |
 | E27 | Tabla `usage_session` muy grande | `observeSessionsSince` carga 14 días de filas en memoria en cada emisión; sin poda, la tabla crece indefinidamente |
 | E28 | Notificación heads-up de SystemUI sobre el objetivo | Cuenta como cambio de primer plano (misma causa del §26-B) |
+| E29 | El servicio arranca o se reconecta estando el usuario **ya dentro** de un objetivo | `currentForegroundPackage` nace `null`, y `onContentChanged` no hace **nada** mientras el paquete del evento no coincida con el primer plano registrado (`domain/engine/GateEngine.kt:190`). Hasta que llegue un `TYPE_WINDOW_STATE_CHANGED` —el único camino que fija el primer plano (`GateEngine.kt:160`)— no hay detección ni fricción. Para `APP_GLOBAL` el hueco se cierra en el primer cambio de ventana (que además será `fresco=true`). Para una **sección** puede durar mucho: el visor de Reels/Shorts deja de emitir eventos al reproducirse (es la razón de ser del *settle scan*, §10.2 evento E), así que la sección ya visible puede quedar sin vigilar hasta que el usuario navegue. `VERIFICADO EN CÓDIGO` |
 
 ---
 

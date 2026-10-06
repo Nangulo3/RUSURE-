@@ -271,3 +271,50 @@ propuesto para `docs/DECISIONS.md`, **a confirmar antes de escribirlo**:
 
 Mientras no se confirme, S8 sigue siendo comportamiento **actual**, y así lo fijarán los tests de
 `current/` de la fase F5.
+
+---
+
+## Verificación F4 (pausa)
+
+**Fecha**: 2026-10-05, 22:50–22:57 · **APK**: commit `39c77b5` · Mismo dispositivo.
+
+F4 introdujo `PauseSource` para que el motor consulte la pausa global con `clock.now()` en lugar de
+leer `System.currentTimeMillis()` por su cuenta. Eso toca **temporización**, así que la regla 7 de
+`CLAUDE.md` exige dispositivo. La pausa (D-009) no estaba cubierta por la línea base F1.
+
+| Flujo | Esperado | Resultado |
+|---|---|---|
+| Activar pausa → abrir el objetivo | sin fricción | **CUMPLE** |
+| Quedarse dentro hasta que venza (5 min) | fricción al instante (D-009 #1) | **CUMPLE**, flanco a los 4 min 59,6 s |
+| Nueva pausa → "Reanudar ahora" → abrir | fricción (D-009 #2) | **CUMPLE** |
+
+```
+22:50:41.726  pausa iniciada | cierra bloqueados=[]
+22:50:45.325  gate tiktok_global INITIAL | PAUSA GLOBAL -> pasa sin friccion
+22:50:45.734  tick | estado=ALLOWED limite=0/300000ms          <- sin pantalla, contando tiempo
+
+22:55:41.315  flanco de pausa | pausado=false
+22:55:41.316  pausa terminada | reevalua=[tiktok_global] primerPlano=<objetivo>
+22:55:41.316  transicion tiktok_global -> GATING | INITIAL 5s  <- friccion al instante
+22:55:47.104  decision Continuar -> ALLOWED
+
+22:56:43.449  flanco de pausa | pausado=true  -> pausa iniciada
+22:56:44.451  flanco de pausa | pausado=false -> pausa terminada   (Reanudar ahora)
+22:56:48.881  estado=IDLE fresco=true -> gate INITIAL            <- la friccion vuelve
+```
+
+Detalles que confirman los supuestos aprobados de D-009:
+
+* **El flanco se detecta con el reloj nuevo y en el tick siguiente al vencimiento**: pausa iniciada
+  a las 22:50:41,726 y terminada a las 22:55:41,315, es decir 4 min 59,6 s de los 5 min fijos.
+* **El gate del final de la pausa reutiliza la sesión**: entre el inicio de la pausa y el gate no hay
+  ningún `cierre (sesion=…)`, así que `getOpenSession` encuentra la de la pausa y no se cuenta una
+  apertura extra.
+* **Durante la pausa el tiempo sigue contando** (decisión #3): el tick marca `estado=ALLOWED` y el
+  reloj del límite avanzando, sin pantalla de fricción.
+* En el paso 3, `onPauseEnded` **cerró** el objetivo en vez de gatearlo al instante, y es correcto:
+  estaba suspendido y el primer plano era una ventana auxiliar, así que `visible` era falso. La
+  fricción llegó en la siguiente apertura.
+
+**B15 sigue reproduciéndose** (paso 3, sesión 2432 cerrada 0,8 s antes del "Continuar"), lo cual es
+la señal buscada: F4 no cambió comportamiento.
